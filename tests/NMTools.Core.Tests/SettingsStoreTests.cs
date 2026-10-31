@@ -1,3 +1,4 @@
+using System.Text.Json;
 using NMTools.App.Infrastructure;
 using NMTools.Core;
 
@@ -309,6 +310,182 @@ public sealed class SettingsStoreTests : IDisposable
         {
             DeleteIfExists(path, path + ".bak");
         }
+    }
+
+    [Fact]
+    public void AppSettingsStore_Version6Settings_AreMigratedAndRewrittenToCurrentVersion()
+    {
+        // 迁移不只是"能读"，还要把磁盘上的旧格式升级成新格式，
+        // 否则每次启动都要重新迁移一次，旧文件永远留在那里。
+        var fileName = $"test-{Guid.NewGuid():N}.json";
+        var path = Path.Combine(AppContext.BaseDirectory, "data", fileName);
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, BuildVersion6Settings(hotkeyVirtualKey: 0x41, settleDelayMs: 650));
+
+            var loaded = new AppSettingsStore(fileName).Load();
+
+            Assert.NotNull(loaded);
+            Assert.Equal(0x41u, loaded!.HotkeyVirtualKey);
+            Assert.Equal(TimeSpan.FromMilliseconds(650), loaded.PostActivationClipboardSettleDelay);
+
+            // 关键断言：文件已经按当前版本重写。
+            using var document = JsonDocument.Parse(File.ReadAllText(path));
+            Assert.Equal(7, document.RootElement.GetProperty("Version").GetInt32());
+            Assert.True(document.RootElement.TryGetProperty("CheckUpdatesOnStartup", out _));
+        }
+        finally
+        {
+            DeleteIfExists(path, path + ".bak");
+        }
+    }
+
+    [Fact]
+    public void AppSettingsStore_CurrentVersionSettings_AreNotRewritten()
+    {
+        // 已经是当前版本的文件不该产生多余的磁盘写入。
+        var fileName = $"test-{Guid.NewGuid():N}.json";
+        var path = Path.Combine(AppContext.BaseDirectory, "data", fileName);
+        try
+        {
+            var store = new AppSettingsStore(fileName);
+            Assert.True(store.Save(new InputBridgeOptions { HotkeyVirtualKey = 0x41 }));
+            var writtenAt = File.GetLastWriteTimeUtc(path);
+            var originalBytes = File.ReadAllBytes(path);
+
+            // 等待一个可分辨的时间间隔，任何重写都会改变时间戳。
+            Thread.Sleep(50);
+            var loaded = store.Load();
+
+            Assert.NotNull(loaded);
+            Assert.Equal(writtenAt, File.GetLastWriteTimeUtc(path));
+            Assert.Equal(originalBytes, File.ReadAllBytes(path));
+        }
+        finally
+        {
+            DeleteIfExists(path, path + ".bak");
+        }
+    }
+
+    [Fact]
+    public void AppSettingsStore_FutureVersion_IsRejectedInsteadOfPartiallyRead()
+    {
+        // 更高版本的程序可能写了未知字段，旧程序读过再保存会丢字段，必须拒绝整个文件。
+        var fileName = $"test-{Guid.NewGuid():N}.json";
+        var path = Path.Combine(AppContext.BaseDirectory, "data", fileName);
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, """
+            {
+              "Version": 99,
+              "HotkeyModifiers": 3,
+              "HotkeyVirtualKey": 32,
+              "MaxInputLength": 100000
+            }
+            """);
+
+            Assert.Null(new AppSettingsStore(fileName).Load());
+        }
+        finally
+        {
+            DeleteIfExists(path, path + ".bak");
+        }
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    public void AppSettingsStore_EarliestVersions_LoadWithDefaultPasteBindings(int version)
+    {
+        // 版本 5 之前没有粘贴方式槽位，读出来必须补全套默认绑定，而不是失败。
+        var fileName = $"test-{Guid.NewGuid():N}.json";
+        var path = Path.Combine(AppContext.BaseDirectory, "data", fileName);
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, $$"""
+            {
+              "Version": {{version}},
+              "HotkeyModifiers": 3,
+              "HotkeyVirtualKey": 32,
+              "MaxInputLength": 100000
+            }
+            """);
+
+            var loaded = new AppSettingsStore(fileName).Load();
+
+            Assert.NotNull(loaded);
+            Assert.Equal(0x20u, loaded!.HotkeyVirtualKey);
+            Assert.True(loaded.PasteBindings.IsValid());
+            // 迁移后落盘为当前版本。
+            using var document = JsonDocument.Parse(File.ReadAllText(path));
+            Assert.Equal(7, document.RootElement.GetProperty("Version").GetInt32());
+        }
+        finally
+        {
+            DeleteIfExists(path, path + ".bak");
+        }
+    }
+
+    [Fact]
+    public void AppSettingsStore_MigrationPreservesEveryUserVisibleField()
+    {
+        // 迁移最容易出的错是"能读但丢字段"。这里逐项核对用户改过的每个设置。
+        var fileName = $"test-{Guid.NewGuid():N}.json";
+        var path = Path.Combine(AppContext.BaseDirectory, "data", fileName);
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, """
+            {
+              "Version": 6,
+              "HotkeyModifiers": 6,
+              "HotkeyVirtualKey": 65,
+              "RetryHotkeyModifiers": 5,
+              "RetryHotkeyVirtualKey": 82,
+              "ClipboardSettleDelayMilliseconds": 1250,
+              "EnableVisualEffects": false,
+              "MaxInputLength": 50000,
+              "PasteBindings": {}
+            }
+            """);
+
+            var loaded = new AppSettingsStore(fileName).Load();
+
+            Assert.NotNull(loaded);
+            Assert.Equal(HotkeyModifiers.Control | HotkeyModifiers.Shift, loaded!.HotkeyModifiers);
+            Assert.Equal(0x41u, loaded.HotkeyVirtualKey);
+            // JSON 里写的是 5，即 Alt | Shift。
+            Assert.Equal(HotkeyModifiers.Alt | HotkeyModifiers.Shift, loaded.RetryHotkeyModifiers);
+            Assert.Equal(0x52u, loaded.RetryHotkeyVirtualKey);
+            Assert.Equal(TimeSpan.FromMilliseconds(1250), loaded.PostActivationClipboardSettleDelay);
+            Assert.False(loaded.EnableVisualEffects);
+            Assert.Equal(50000, loaded.MaxInputLength);
+            // 新字段按默认值补齐，不联网。
+            Assert.False(loaded.CheckUpdatesOnStartup);
+        }
+        finally
+        {
+            DeleteIfExists(path, path + ".bak");
+        }
+    }
+
+    private static string BuildVersion6Settings(uint hotkeyVirtualKey, int settleDelayMs)
+    {
+        return System.Text.Json.JsonSerializer.Serialize(new
+        {
+            Version = 6,
+            HotkeyModifiers = 3,
+            HotkeyVirtualKey = hotkeyVirtualKey,
+            ClipboardSettleDelayMilliseconds = settleDelayMs,
+            EnableVisualEffects = true,
+            MaxInputLength = 100000,
+            PasteBindings = new PasteShortcutBindings(),
+        });
     }
 
     [Fact]
