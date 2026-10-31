@@ -96,14 +96,35 @@ public sealed class PortableLayoutTests
     [Fact]
     public void Paths_AreLaidOutAsDocumented()
     {
-        var app = Path.Combine("root", "NMTools-win-x64", "program");
+        var packageRoot = Path.Combine("root", "NMTools-win-x64");
+        var app = Path.Combine(packageRoot, "program");
 
-        Assert.Equal(Path.Combine(app, ".update-staging"), PortableLayout.ResolveStagingDirectory(app));
+        // 暂存、备份、标记都必须在 program/ 之外——更新器要从暂存目录运行，
+        // 然后重命名整个 program/，Windows 不允许重命名含正在运行程序的目录。
         Assert.Equal(
-            Path.Combine("root", "NMTools-win-x64", "program.old"),
+            Path.Combine(packageRoot, ".update-staging"),
+            PortableLayout.ResolveStagingDirectory(app));
+        Assert.Equal(
+            Path.Combine(packageRoot, "program.old"),
             PortableLayout.ResolveBackupDirectory(app));
         Assert.Equal(
-            Path.Combine("root", "NMTools-win-x64", ".update-pending"),
+            Path.Combine(packageRoot, ".update-pending"),
             PortableLayout.ResolvePendingUpdateMarker(app));
+    }
+
+    [Fact]
+    public void StagingDirectory_IsOutsideProgramDirectory()
+    {
+        // 防回归：暂存目录一旦落回 program/ 内部，更新器的自我重命名就会失败。
+        var app = Path.Combine("root", "NMTools-win-x64", "program");
+        var staging = PortableLayout.ResolveStagingDirectory(app);
+
+        Assert.False(
+            staging.StartsWith(app + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase),
+            $"暂存目录 {staging} 不能位于 {app} 之内。");
+        Assert.StartsWith(
+            PortableLayout.ResolvePackageRoot(app) + Path.DirectorySeparatorChar,
+            staging,
+            StringComparison.OrdinalIgnoreCase);
     }
 }

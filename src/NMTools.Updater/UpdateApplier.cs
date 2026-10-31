@@ -52,6 +52,15 @@ public sealed class UpdateApplier
         var backupDirectory = PortableLayout.ResolveBackupDirectory(appDirectory);
         var appParent = Path.GetDirectoryName(Path.GetFullPath(appDirectory))!;
 
+        // 更新器必须运行在 program/ 之外。它要重命名整个 program/，而 Windows 不允许
+        // 重命名含有正在运行可执行文件的目录。这里先自查，给出准确日志，
+        // 而不是让 Directory.Move 抛一个语焉不详的 IOException。
+        if (IsRunningInside(appDirectory))
+        {
+            _log($"updater is running inside {appDirectory}; cannot rename it");
+            return ApplyResult.Failure(ApplyFailureReason.UpdaterInsideTarget);
+        }
+
         if (!IsWritable(appParent))
         {
             _log($"target directory is not writable: {appParent}");
@@ -241,6 +250,32 @@ public sealed class UpdateApplier
         }
     }
 
+    /// <summary>
+    /// 更新器自己的可执行文件是否位于 <paramref name="appDirectory"/> 之内。
+    /// 在就说明暂存目录放错了位置，重命名必然失败。
+    /// </summary>
+    private static bool IsRunningInside(string appDirectory)
+    {
+        try
+        {
+            var self = Environment.ProcessPath;
+            if (string.IsNullOrEmpty(self))
+            {
+                return false;
+            }
+
+            var target = Path.GetFullPath(appDirectory)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var selfPath = Path.GetFullPath(self);
+
+            return selfPath.StartsWith(target + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
     private static bool IsWritable(string directory)
     {
         try
@@ -269,6 +304,9 @@ public enum ApplyFailureReason
     StaleBackup,
     BackupFailed,
     ApplyFailed,
+
+    /// <summary>更新器自身位于待替换目录内，无法重命名该目录。属于部署错误，不应发生。</summary>
+    UpdaterInsideTarget,
 }
 
 /// <param name="BackupDirectory">成功时的旧版本备份目录，供主程序启动确认后清理。</param>

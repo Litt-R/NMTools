@@ -42,15 +42,17 @@ internal static class Program
                         "发现上次更新遗留的备份目录 program.old，已取消更新以免丢失可运行版本。请手动确认后删除该目录再试。",
                     ApplyFailureReason.MissingNewProgram =>
                         "下载的更新包不完整，已保留当前版本。",
+                    ApplyFailureReason.UpdaterInsideTarget =>
+                        "更新程序的位置不正确，无法替换文件。请重新下载完整发布包。",
                     _ =>
                         "更新失败，已尝试恢复原版本。若程序无法启动，请重新下载完整发布包。",
                 });
                 return 1;
             }
 
-            // 更新成功后清掉暂存目录，避免下次误用。
-            // 更新器自身正从暂存目录里运行，无法删除自己的 EXE，所以只清内容，
-            // 自己的副本留给下次更新覆盖（它位于 .update-staging/ 内，不污染 program/）。
+            // 更新成功后清掉下载内容，避免下次误用。
+            // 不删整个暂存根：更新器自身正从 .update-staging/updater/ 里运行，
+            // 删不掉自己的 EXE；那份副本留给下次更新覆盖。
             TryDeleteDirectory(options.StagedDirectory, logger.Write);
 
             // 重新拉起程序，让用户看到的就是升级后的界面。启动入口优先用 VBS（无控制台窗口）。

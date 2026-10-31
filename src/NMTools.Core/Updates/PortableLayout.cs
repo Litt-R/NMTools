@@ -38,7 +38,13 @@ public static class PortableLayout
 
     public const string RuntimeDirectoryName = ".runtime";
 
-    /// <summary>更新暂存目录，位于 <c>program/</c> 内但不在任何被替换的路径上。</summary>
+    /// <summary>
+    /// 更新暂存目录，位于发布包根目录（与 <c>program/</c> 同级），**不在** <c>program/</c> 内。
+    ///
+    /// 这里的关键约束：更新器要从暂存目录里运行，而它随后要把整个 <c>program/</c> 改名成
+    /// <c>program.old/</c>。Windows 不允许重命名含有正在运行程序的目录，如果暂存目录在
+    /// <c>program/</c> 内部，改名必然失败。放在同级就能避开这个问题。
+    /// </summary>
     public const string StagingDirectoryName = ".update-staging";
 
     /// <summary>旧版本备份目录，与 <c>program/</c> 同级。</summary>
@@ -67,8 +73,12 @@ public static class PortableLayout
         return parent ?? throw new InvalidOperationException("程序目录没有上级目录。");
     }
 
+    /// <summary>
+    /// 更新暂存目录，位于发布包根目录下，与 <c>program/</c> 同级。
+    /// 更新器从这里运行，因此它不能落在被替换的 <c>program/</c> 之内。
+    /// </summary>
     public static string ResolveStagingDirectory(string appDirectory) =>
-        Path.Combine(appDirectory, StagingDirectoryName);
+        Path.Combine(ResolvePackageRoot(appDirectory), StagingDirectoryName);
 
     public static string ResolveBackupDirectory(string appDirectory) =>
         Path.Combine(ResolvePackageRoot(appDirectory), BackupDirectoryName);
