@@ -74,17 +74,24 @@ public sealed class UpdateApplier
             return ApplyResult.Failure(ApplyFailureReason.StaleBackup);
         }
 
-        try
+        // 0. 先删运行时解压缓存。它是可重建的，而且正是最容易卡住改名的东西：
+        //    单文件 exe 首次运行会把几十 MB 原生 DLL 解压到 .runtime/，杀毒软件会在
+        //    后台扫描这些新文件并持有句柄，导致整个 program/ 无法改名。
+        //    删掉它，改名就能顺利进行；新版本首次启动会自己重新解压。
+        TryDeleteRuntimeCache(appDirectory);
+
+        // 1. 原子改名：旧版本整体挪到 program.old/。
+        //
+        // 进程退出和文件句柄释放不是同一时刻：Process.WaitForExit 返回后，
+        // Windows 仍可能短暂持有 exe 的句柄，此时 Directory.Move 会抛 IOException。
+        // 重试几次可以覆盖这段窗口。
+        if (!TryMoveDirectoryWithRetry(appDirectory, backupDirectory, out var failureType))
         {
-            // 1. 原子改名：旧版本整体挪到 program.old/。
-            Directory.Move(appDirectory, backupDirectory);
-            _log($"backed up {appDirectory} -> {backupDirectory}");
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-        {
-            _log($"backup move failed: {exception.GetType().Name}");
+            _log($"backup move failed after retries: {failureType}");
             return ApplyResult.Failure(ApplyFailureReason.BackupFailed);
         }
+
+        _log($"backed up {appDirectory} -> {backupDirectory}");
 
         try
         {
@@ -131,6 +138,65 @@ public sealed class UpdateApplier
         {
             _log($"rollback failed: {exception.GetType().Name}");
             return false;
+        }
+    }
+
+    /// <summary>
+    /// 删除 <c>.runtime/</c> 运行时解压缓存。
+    ///
+    /// 它是单文件 exe 首次运行解压出来的原生 DLL，删掉后新版本会自行重建，
+    /// 不属于用户数据。更关键的是：这些文件刚被写入磁盘，杀毒软件往往正在扫描，
+    /// 持有句柄会让整个 <c>program/</c> 无法重命名——这是更新失败最常见的原因。
+    /// 删不掉也不中止流程，交给后面的重试。
+    /// </summary>
+    private void TryDeleteRuntimeCache(string appDirectory)
+    {
+        var runtime = Path.Combine(appDirectory, PortableLayout.RuntimeDirectoryName);
+        if (!Directory.Exists(runtime))
+        {
+            return;
+        }
+
+        try
+        {
+            Directory.Delete(runtime, recursive: true);
+            _log("deleted .runtime cache before replacing");
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // 删不掉就继续走改名流程，由重试兜底。
+            _log($"runtime cache delete failed: {exception.GetType().Name}");
+        }
+    }
+
+    /// <summary>
+    /// 带重试的目录改名。进程退出后 Windows 可能仍短暂持有文件句柄，
+    /// 直接 Move 会失败；退避重试能覆盖这段窗口而不必让用户重来。
+    /// </summary>
+    private bool TryMoveDirectoryWithRetry(string source, string destination, out string? failureType)
+    {
+        // 间隔递增，总等待约 3 秒。正常情况下第一次就能成功，只有句柄释放慢时才用得上。
+        var delays = new[] { 100, 200, 400, 800, 1500 };
+
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                Directory.Move(source, destination);
+                failureType = null;
+                return true;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                if (attempt >= delays.Length)
+                {
+                    failureType = exception.GetType().Name;
+                    return false;
+                }
+
+                _log($"backup move attempt {attempt + 1} failed ({exception.GetType().Name}), retrying");
+                Thread.Sleep(delays[attempt]);
+            }
         }
     }
 

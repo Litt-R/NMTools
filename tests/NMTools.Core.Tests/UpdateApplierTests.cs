@@ -139,6 +139,28 @@ public sealed class UpdateApplierTests : IDisposable
     }
 
     [Fact]
+    public void Apply_DeletesRuntimeCacheBeforeReplacing()
+    {
+        // .runtime 是单文件 exe 解压出的原生 DLL 缓存，杀毒软件扫描时会锁住整个目录。
+        // 更新前必须删掉它，否则重命名 program/ 会失败——这是实际遇到过的故障。
+        var package = CreatePackageRoot("v1");
+        var app = CreateAppDirectory(package, "v1");
+        var runtime = Path.Combine(app, PortableLayout.RuntimeDirectoryName, "NMTools.App", "abc");
+        Directory.CreateDirectory(runtime);
+        File.WriteAllText(Path.Combine(runtime, "PresentationNative_cor3.dll"), "native");
+
+        var result = new UpdateApplier(_ => { }).Apply(ExitedProcessId(), app, CreateStagedVersion("v2"));
+
+        Assert.True(result.IsSuccess, $"更新失败：{result.FailureReason}");
+        // 旧缓存不能跟到新版本里，新版本首次启动会自己解压。
+        Assert.False(
+            Directory.Exists(Path.Combine(app, PortableLayout.RuntimeDirectoryName)),
+            ".runtime 缓存应被删除。");
+        // 用户数据照旧保留。
+        Assert.True(Directory.Exists(Path.Combine(app, "data")));
+    }
+
+    [Fact]
     public void Apply_FindsProgramDirectoryOneLevelDown()
     {
         // 真实链路：解压器返回的是「包根」（内含 program/），但如果调用方多包了一层，
