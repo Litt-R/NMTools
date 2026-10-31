@@ -161,7 +161,7 @@ public sealed class UpdateService : IDisposable
         else
         {
             var dialog = UpdateAvailableDialog.Show(owner, manifest, _checker.CurrentVersion);
-            userWantsUpdate = dialog.OpenReleasePageRequested;
+            userWantsUpdate = dialog.UpdateRequested;
         }
 
         if (!userWantsUpdate)
@@ -172,8 +172,14 @@ public sealed class UpdateService : IDisposable
         if (!manifest.SupportsAutomaticUpdate)
         {
             // 该版本没有可用的便携包资产（例如上传了错误的文件名），无法自动下载。
+            // 不引导用户去外部页面：更新只通过程序内的下载通道完成，
+            // 出错时给出可操作提示即可，不接受"跳转到浏览器手动下载"这种半自动路径。
             _log?.Warn("update.install.notSupported", "release has no matching archive asset");
-            OpenReleasePage(manifest.ReleasePageUrl, owner);
+            _showAlert(
+                "这个版本暂时无法自动更新。请稍后重试；若持续失败，请联系维护者。",
+                "NMTools - 更新失败",
+                true,
+                owner);
             return;
         }
 
@@ -327,34 +333,6 @@ public sealed class UpdateService : IDisposable
             _ownerAccessor());
     }
 
-    /// <summary>
-    /// 在默认浏览器中打开 Release 页面。仅在没有校验文件、无法自动更新时使用。
-    /// </summary>
-    private void OpenReleasePage(string url, Window? owner)
-    {
-        if (!UpdateSource.IsTrustedReleaseUrl(url))
-        {
-            _log?.Warn("update.openReleasePage.rejected", "release page url is not a trusted repository url");
-            _showAlert(UpdateDisplay.OpenReleasePageFailedMessage, "NMTools - 下载更新", true, owner);
-            return;
-        }
-
-        try
-        {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = url,
-                UseShellExecute = true,
-            });
-            _log?.Info("update.openReleasePage", "user opened the release page");
-        }
-        catch (Exception exception) when (
-            exception is System.ComponentModel.Win32Exception or InvalidOperationException)
-        {
-            _log?.Warn("update.openReleasePage.failed", $"ex={exception.GetType().Name}");
-            _showAlert(UpdateDisplay.OpenReleasePageFailedMessage, "NMTools - 下载更新", true, owner);
-        }
-    }
 
     private static string DescribePrepareFailure(PrepareFailureReason reason) => reason switch
     {

@@ -11,10 +11,6 @@ public static class UpdateDisplay
     /// <summary>没有更新说明时的占位文案。</summary>
     public const string NoNotesPlaceholder = "该版本没有提供更新说明。";
 
-    /// <summary>打开 Release 页面失败时的提示。</summary>
-    public const string OpenReleasePageFailedMessage =
-        "无法打开浏览器，请手动访问 GitHub Releases 页面下载新版本。";
-
     public static string FormatVersion(Version version)
     {
         ArgumentNullException.ThrowIfNull(version);

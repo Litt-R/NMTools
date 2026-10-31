@@ -13,14 +13,13 @@ public static class UpdateSource
     public const string LatestReleaseApiUrl =
         "https://api.github.com/repos/" + Owner + "/" + Repository + "/releases/latest";
 
-    public const string ReleasesPageUrl =
-        "https://github.com/" + Owner + "/" + Repository + "/releases";
-
-    private const string RepositoryPageUrlPrefix = "https://github.com/" + Owner + "/" + Repository + "/";
+    private const string RepositoryUrlPrefix = "https://github.com/" + Owner + "/" + Repository + "/";
 
     /// <summary>
-    /// 判断一个链接是否属于本仓库。只接受 https 且主机为 github.com 的地址，
+    /// 判断一个下载链接是否属于本仓库的发布资产。只接受 https 且主机为 github.com 的地址，
     /// 并且必须落在 <c>/Litt-R/NMTools/</c> 路径下。
+    ///
+    /// 这里的校验对象只有下载地址，不是供用户点击的页面链接——程序不打开任何外部页面。
     /// </summary>
     public static bool IsTrustedReleaseUrl(string? url)
     {
@@ -34,16 +33,7 @@ public static class UpdateSource
             && uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase)
             && !uri.AbsolutePath.Contains("..", StringComparison.Ordinal)
             && (uri.AbsolutePath + "/").StartsWith(
-                new Uri(RepositoryPageUrlPrefix).AbsolutePath,
+                new Uri(RepositoryUrlPrefix).AbsolutePath,
                 StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>
-    /// 某个 tag 对应的 Release 页面。用于响应中缺少合法链接时的兜底，tag 会被转义。
-    /// </summary>
-    public static string TagPageUrl(string tagName)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(tagName);
-        return RepositoryPageUrlPrefix + "tag/" + Uri.EscapeDataString(tagName);
     }
 }

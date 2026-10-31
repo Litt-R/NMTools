@@ -9,14 +9,12 @@ namespace NMTools.Core.Updates;
 /// <param name="Notes">更新说明（GitHub 的 release body），可能为空。</param>
 /// <param name="DownloadUrl">与发布包同名的 zip 资产地址；没有匹配资产时为 null。</param>
 /// <param name="DownloadSizeBytes">zip 资产大小；未知时为 null。</param>
-/// <param name="ReleasePageUrl">该版本的 GitHub Release 页面，用于「下载并更新」。</param>
 public sealed record UpdateManifest(
     Version Version,
     string TagName,
     string Notes,
     string? DownloadUrl,
-    long? DownloadSizeBytes,
-    string ReleasePageUrl)
+    long? DownloadSizeBytes)
 {
     /// <summary>
     /// 是否具备自动更新的条件：清单里有发布包资产。

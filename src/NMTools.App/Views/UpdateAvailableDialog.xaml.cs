@@ -9,15 +9,12 @@ namespace NMTools.App.Views;
 /// </summary>
 public partial class UpdateAvailableDialog : Window
 {
-    private readonly string _releasePageUrl;
-
     public UpdateAvailableDialog(UpdateManifest manifest, Version currentVersion)
     {
         ArgumentNullException.ThrowIfNull(manifest);
         ArgumentNullException.ThrowIfNull(currentVersion);
 
         InitializeComponent();
-        _releasePageUrl = manifest.ReleasePageUrl;
         HeaderText.Text = UpdateDisplay.FormatHeadline(manifest.Version, currentVersion);
 
         // 说明和体积都来自网络响应，这里只做纯文本展示，不解析 Markdown、不加载任何外部资源。
@@ -35,13 +32,9 @@ public partial class UpdateAvailableDialog : Window
     }
 
     /// <summary>
-    /// 用户选择了「下载并更新」。调用方据此进入下载与安装流程；
-    /// 只有在发布缺少校验文件时才会退回打开浏览器。
+    /// 用户选择了「下载并更新」。调用方据此进入下载与安装流程。
     /// </summary>
-    public bool OpenReleasePageRequested { get; private set; }
-
-    /// <summary>本次检查对应的 Release 页面地址。</summary>
-    public string ReleasePageUrl => _releasePageUrl;
+    public bool UpdateRequested { get; private set; }
 
     /// <summary>
     /// 以当前可见窗口为 Owner 弹出提示；主窗口隐藏时（托盘启动）改为独立显示。
@@ -68,14 +61,14 @@ public partial class UpdateAvailableDialog : Window
     {
         // 「以后再说」不写任何状态：下次发现同一版本仍会提示，这是刻意的
         // ——不引入"已跳过版本"这类需要持久化和清理的状态。
-        OpenReleasePageRequested = false;
+        UpdateRequested = false;
         DialogResult = false;
         e.Handled = true;
     }
 
     private void OnDownloadClick(object sender, RoutedEventArgs e)
     {
-        OpenReleasePageRequested = true;
+        UpdateRequested = true;
         DialogResult = true;
         e.Handled = true;
     }

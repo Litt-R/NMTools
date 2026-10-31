@@ -32,9 +32,6 @@ public sealed class UpdateManifestParserTests
         Assert.Equal("v0.7.0", manifest.TagName);
         Assert.Contains("新增自动更新检查", manifest.Notes);
         Assert.Equal(12345678L, manifest.DownloadSizeBytes);
-        Assert.Equal(
-            "https://github.com/Litt-R/NMTools/releases/tag/v0.7.0",
-            manifest.ReleasePageUrl);
     }
 
     [Fact]
@@ -78,8 +75,10 @@ public sealed class UpdateManifestParserTests
     }
 
     [Fact]
-    public void Parse_UntrustedHtmlUrl_FallsBackToComputedTagPage()
+    public void Parse_IgnoresReleasePageUrlEntirely()
     {
+        // 程序不打开任何外部页面，清单里也就不该保留页面链接——
+        // 界面拿不到地址，就不存在把用户引到浏览器的可能。
         var json = FullReleaseJson.Replace(
             "\"html_url\": \"https://github.com/Litt-R/NMTools/releases/tag/v0.7.0\"",
             "\"html_url\": \"https://evil.example.com/phish\"");
@@ -87,9 +86,11 @@ public sealed class UpdateManifestParserTests
         var manifest = UpdateManifestParser.Parse(json);
 
         Assert.NotNull(manifest);
-        Assert.Equal(
-            "https://github.com/Litt-R/NMTools/tag/v0.7.0",
-            manifest!.ReleasePageUrl);
+        Assert.DoesNotContain(
+            typeof(UpdateManifest).GetProperties(),
+            property => property.Name.Contains("Url", StringComparison.Ordinal)
+                && property.PropertyType == typeof(string)
+                && property.Name != nameof(UpdateManifest.DownloadUrl));
     }
 
     [Theory]

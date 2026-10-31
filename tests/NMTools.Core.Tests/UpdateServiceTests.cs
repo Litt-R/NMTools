@@ -137,8 +137,11 @@ public sealed class UpdateServiceTests
         await service.CheckAsync(interactive: false);
 
         Assert.Single(prompts);
-        Assert.DoesNotContain("evil.example.com", prompts[0].Manifest.ReleasePageUrl);
-        Assert.True(UpdateSource.IsTrustedReleaseUrl(prompts[0].Manifest.ReleasePageUrl));
+        // 清单里根本不保留页面链接，界面也就无从把用户引到浏览器。
+        Assert.DoesNotContain(
+            "evil.example.com",
+            prompts[0].Manifest.ToString(),
+            StringComparison.OrdinalIgnoreCase);
     }
 
     private static UpdateService CreateService(

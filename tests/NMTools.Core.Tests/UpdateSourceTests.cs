@@ -46,10 +46,16 @@ public sealed class UpdateSourceTests
     }
 
     [Fact]
-    public void TagPageUrl_EscapesTag()
+    public void UpdateSource_ExposesOnlyTheApiEndpoint()
     {
-        Assert.Equal(
-            "https://github.com/Litt-R/NMTools/tag/v0.7.0%20beta",
-            UpdateSource.TagPageUrl("v0.7.0 beta"));
+        // 没有面向用户的页面地址——程序不打开外部链接。
+        var properties = typeof(UpdateSource)
+            .GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+            .Select(property => property.Name)
+            .ToArray();
+
+        Assert.DoesNotContain(properties, name =>
+            name.Contains("Page", StringComparison.Ordinal)
+            || name.Contains("Releases", StringComparison.Ordinal));
     }
 }

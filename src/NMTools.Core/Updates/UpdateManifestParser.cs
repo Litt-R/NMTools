@@ -49,15 +49,13 @@ public static class UpdateManifestParser
             }
 
             var (downloadUrl, downloadSize) = FindArchiveAsset(root, version);
-            var releasePageUrl = ResolveReleasePageUrl(root, tagName!);
 
             return new UpdateManifest(
                 version,
                 tagName!,
                 notes,
                 downloadUrl,
-                downloadSize,
-                releasePageUrl);
+                downloadSize);
         }
         catch (JsonException)
         {
@@ -107,21 +105,6 @@ public static class UpdateManifestParser
         }
 
         return (null, null);
-    }
-
-    /// <summary>
-    /// 找到校验文件资产。<c>SHA256SUMS.txt</c> 是发布脚本固定产出的名字。
-    /// </summary>
-    private static string ResolveReleasePageUrl(JsonElement root, string tagName)
-    {
-        var htmlUrl = ReadString(root, "html_url");
-        if (UpdateSource.IsTrustedReleaseUrl(htmlUrl))
-        {
-            return htmlUrl!;
-        }
-
-        // 不使用 API 响应里不受信任的链接兜底，直接按仓库常量和 tag 拼一个确定的地址。
-        return UpdateSource.TagPageUrl(tagName);
     }
 
     private static bool ReadBoolean(JsonElement element, string propertyName)
