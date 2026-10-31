@@ -143,7 +143,7 @@ internal static class Program
 /// 更新器的命令行参数。由主程序在退出前传入，不读取任何配置文件，
 /// 因此不会因为用户改设置而影响更新行为。
 /// </summary>
-internal sealed record UpdaterOptions(
+public sealed record UpdaterOptions(
     int ProcessId,
     string AppDirectory,
     string StagedDirectory,
@@ -194,13 +194,18 @@ internal sealed record UpdaterOptions(
             return null;
         }
 
+        // 统一去掉尾部反斜杠。调用方若传了 "D:\...\program\"，反斜杠会与收尾引号
+        // 混淆，副作用是这里的值带着多余分隔符，后续 Path.Combine 会拼出双斜杠。
+        var normalizedApp = appDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var normalizedStaged = stagedDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
         // 未提供时按约定推导：暂存根就是解压目录的上一级。
-        stagingRoot ??= Path.GetDirectoryName(stagedDirectory.TrimEnd(Path.DirectorySeparatorChar));
+        stagingRoot ??= Path.GetDirectoryName(normalizedStaged);
 
         return new UpdaterOptions(
             pid.Value,
-            appDirectory,
-            stagedDirectory,
+            normalizedApp,
+            normalizedStaged,
             stagingRoot ?? string.Empty);
     }
 }

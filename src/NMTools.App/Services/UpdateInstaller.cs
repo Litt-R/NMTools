@@ -122,10 +122,20 @@ public sealed class UpdateInstaller : IDisposable
 
         try
         {
+            // 路径必须以非分隔符结尾：AppContext.BaseDirectory 带尾部反斜杠，
+            // 拼成 "D:\...\program\" 后反斜杠会转义右引号，整个命令行被解析错，
+            // 更新器收到的参数全乱。这里统一去掉尾部反斜杠。
+            var normalizedAppDirectory = appDirectory.TrimEnd(
+                Path.DirectorySeparatorChar,
+                Path.AltDirectorySeparatorChar);
+            var normalizedContent = contentDirectory.TrimEnd(
+                Path.DirectorySeparatorChar,
+                Path.AltDirectorySeparatorChar);
+
             var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
             {
                 FileName = launchPath,
-                Arguments = $"--pid {Environment.ProcessId} --app-dir \"{appDirectory}\" --staged-dir \"{contentDirectory}\" --staging-root \"{Path.Combine(PortableLayout.ResolveStagingDirectory(appDirectory))}\"",
+                Arguments = $"--pid {Environment.ProcessId} --app-dir \"{normalizedAppDirectory}\" --staged-dir \"{normalizedContent}\"",
                 UseShellExecute = false,
                 WorkingDirectory = stagingDirectory,
             });
