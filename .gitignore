@@ -1,0 +1,43 @@
+# Visual Studio / .NET
+.vs/
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Test and coverage output
+TestResults/
+coverage/
+publish/
+
+# Generated documentation exports
+output/
+
+# Local Claude Code memory and task handoffs
+.claude/
+.claude/memory/
+.claude/handoffs/
+
+# Local-only design and planning documents
+docs/
+
+# Runtime data: user settings, drafts and diagnostic logs are never source
+data/
+program/data/
+program/logs/
+logs/
+
+# Rider / ReSharper
+.idea/
+_ReSharper*/
+*.DotSettings.user
+
+# Local configuration and secrets
+*.local.json
+.env
+
+# OS files
+.DS_Store
+Thumbs.db

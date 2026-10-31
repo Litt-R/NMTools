@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <RootNamespace>NMTools.App</RootNamespace>
+    <AssemblyName>NMTools.App</AssemblyName>
+    <Version>0.7.0</Version>
+    <AssemblyVersion>0.7.0.0</AssemblyVersion>
+    <FileVersion>0.7.0.0</FileVersion>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <ApplicationIcon>Assets\Branding\NMTools.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NMTools.Core\NMTools.Core.csproj" />
+    <Resource Include="Assets\Branding\NMTools.ico" />
+    <Resource Include="Assets\Branding\dinosaur-transparent.png" />
+    <None Include="Assets\Branding\dinosaur.jpg" />
+  </ItemGroup>
+</Project>

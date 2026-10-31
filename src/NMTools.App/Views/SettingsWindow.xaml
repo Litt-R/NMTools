@@ -1,0 +1,402 @@
+<Window x:Class="NMTools.App.Views.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="NMTools 设置"
+        Width="560"
+        MinWidth="560"
+        MaxWidth="560"
+        SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        AutomationProperties.AutomationId="SettingsWindow"
+        PreviewMouseLeftButtonDown="OnPreviewMouseLeftButtonDown"
+        PreviewMouseDown="OnPreviewMouseDown"
+        ShowInTaskbar="False"
+        ShowActivated="True"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        FontFamily="{StaticResource AppFont}"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType">
+    <Grid Margin="12">
+        <Border CornerRadius="12" Background="#0F172A" Opacity="0.10">
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="20" Direction="270" Opacity="0.25" ShadowDepth="5" Color="#0F172A" />
+            </Border.Effect>
+        </Border>
+        <Border Background="#F8FAFC"
+                BorderBrush="#CBD5E1"
+                BorderThickness="1"
+                CornerRadius="12"
+                SnapsToDevicePixels="True"
+                PreviewMouseLeftButtonDown="OnOuterFramePreviewMouseLeftButtonDown">
+            <Grid Margin="24,20">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <Border x:Name="DragArea"
+                        Background="Transparent">
+                    <Grid>
+                        <TextBlock Margin="0,0,40,0"
+                                   FontSize="17"
+                                   FontWeight="SemiBold"
+                                   Foreground="#0F172A"
+                                   VerticalAlignment="Center"
+                                   Text="设置"
+                                   IsHitTestVisible="False" />
+                        <Button AutomationProperties.AutomationId="SettingsCloseButton"
+                                HorizontalAlignment="Right"
+                                VerticalAlignment="Center"
+                                Style="{StaticResource WindowCloseButtonStyle}"
+                                Click="OnCloseButtonClick" />
+                    </Grid>
+                </Border>
+                <Border Grid.Row="1" Margin="0,16,0,18" Padding="18,16" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="9" SnapsToDevicePixels="True">
+                    <StackPanel>
+                        <TextBlock FontSize="14.5" FontWeight="SemiBold" Foreground="#0F172A" Margin="0,0,0,10" Text="全局快捷键与同步设置" />
+
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
+                                <TextBlock FontSize="13.5" FontWeight="SemiBold" Foreground="#0F172A" Text="唤起气泡全局快捷键" />
+                                <TextBlock Margin="0,2,0,0" FontSize="12" Foreground="#64748B" Text="在 NoMachine 远程窗口内按下该组合键打开输入气泡" />
+                            </StackPanel>
+                            <Button x:Name="GlobalHotkeyButton"
+                                    AutomationProperties.AutomationId="GlobalHotkeyButton"
+                                    Grid.Column="1"
+                                    Click="OnShortcutButtonClick"
+                                    Tag="GlobalHotkey"
+                                    VerticalAlignment="Center"
+                                    ToolTip="点击后直接按下全局组合键（如 Ctrl + Alt + Space）；按 Esc 取消录入"
+                                    Style="{StaticResource ModernSecondaryButtonStyle}"
+                                    Height="30"
+                                    Padding="12,0" />
+                        </Grid>
+
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
+                                <TextBlock FontSize="13.5" FontWeight="SemiBold" Foreground="#0F172A" Text="重试粘贴全局快捷键" />
+                                <TextBlock Margin="0,2,0,0" FontSize="12" Foreground="#64748B" Text="因 NoMachine 同步延迟未粘上时，直接补发上次粘贴动作" />
+                            </StackPanel>
+                            <Button x:Name="RetryHotkeyButton"
+                                    AutomationProperties.AutomationId="RetryHotkeyButton"
+                                    Grid.Column="1"
+                                    Click="OnShortcutButtonClick"
+                                    Tag="RetryHotkey"
+                                    VerticalAlignment="Center"
+                                    ToolTip="点击后直接按下全局组合键（如 Ctrl + Alt + V）；按 Esc 或点击空白处取消修改"
+                                    Style="{StaticResource ModernSecondaryButtonStyle}"
+                                    Height="30"
+                                    Padding="12,0" />
+                        </Grid>
+
+                        <Grid Margin="0,0,0,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock FontSize="13.5" FontWeight="SemiBold" Foreground="#0F172A" VerticalAlignment="Center" Text="剪贴板同步等待延迟" />
+                                    <Button x:Name="SyncDelayHelpButton"
+                                            AutomationProperties.AutomationId="SyncDelayHelpButton"
+                                            Click="OnSyncDelayHelpClick"
+                                            Width="18"
+                                            Height="18"
+                                            Margin="6,0,0,0"
+                                            Padding="0"
+                                            VerticalAlignment="Center"
+                                            Cursor="Hand"
+                                            ToolTip="点击查看为什么要设置同步等待延迟">
+                                        <Button.Template>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border x:Name="HelpBorder"
+                                                        Background="#EFF6FF"
+                                                        BorderBrush="#BFDBFE"
+                                                        BorderThickness="1"
+                                                        CornerRadius="9"
+                                                        SnapsToDevicePixels="True">
+                                                    <TextBlock Text="?"
+                                                               FontSize="11"
+                                                               FontWeight="Bold"
+                                                               Foreground="#2563EB"
+                                                               HorizontalAlignment="Center"
+                                                               VerticalAlignment="Center" />
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="HelpBorder" Property="Background" Value="#DBEAFE" />
+                                                        <Setter TargetName="HelpBorder" Property="BorderBrush" Value="#60A5FA" />
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Button.Template>
+                                    </Button>
+                                    <Popup x:Name="SyncDelayHelpPopup"
+                                           PlacementTarget="{Binding ElementName=SyncDelayHelpButton}"
+                                           Placement="Bottom"
+                                           HorizontalOffset="-16"
+                                           VerticalOffset="4"
+                                           AllowsTransparency="True"
+                                           StaysOpen="False"
+                                           PopupAnimation="Fade">
+                                        <Grid Margin="12">
+                                            <Border CornerRadius="10"
+                                                    Background="#0F172A"
+                                                    Opacity="0.10"
+                                                    IsHitTestVisible="False">
+                                                <Border.Effect>
+                                                    <DropShadowEffect BlurRadius="16"
+                                                                      Direction="270"
+                                                                      Opacity="0.22"
+                                                                      ShadowDepth="4"
+                                                                      Color="#0F172A" />
+                                                </Border.Effect>
+                                            </Border>
+                                            <Border Width="376"
+                                                    Padding="16,14"
+                                                    Background="#FFFFFF"
+                                                    BorderBrush="#CBD5E1"
+                                                    BorderThickness="1"
+                                                    CornerRadius="10"
+                                                    SnapsToDevicePixels="True">
+                                                <StackPanel>
+                                                    <TextBlock FontSize="13.5"
+                                                               FontWeight="SemiBold"
+                                                               Foreground="#0F172A"
+                                                               Text="为什么要设置剪贴板同步等待延迟？" />
+                                                    <TextBlock Margin="0,6,0,0"
+                                                               FontSize="12"
+                                                               Foreground="#475569"
+                                                               LineHeight="18"
+                                                               TextWrapping="Wrap"
+                                                               Text="按下回车后，NMTools 需要等待 NoMachine 客户端通过网络将 Windows 剪贴板同步到远程 Linux 会话，随后才发送粘贴按键。" />
+                                                    <Border Margin="0,8,0,0"
+                                                            Padding="10,8"
+                                                            Background="#F8FAFC"
+                                                            BorderBrush="#E2E8F0"
+                                                            BorderThickness="1"
+                                                            CornerRadius="7">
+                                                        <StackPanel>
+                                                            <TextBlock FontSize="11.5"
+                                                                       Foreground="#334155"
+                                                                       LineHeight="17"
+                                                                       TextWrapping="Wrap"
+                                                                       Text="• 设得太小：上屏更快，但若网络波动或 NoMachine 同步较慢，远程还没拿到新文字就触发了粘贴，会导致漏粘或粘出旧内容。" />
+                                                            <TextBlock Margin="0,4,0,0"
+                                                                       FontSize="11.5"
+                                                                       Foreground="#334155"
+                                                                       LineHeight="17"
+                                                                       TextWrapping="Wrap"
+                                                                       Text="• 设得稍大：给 NoMachine 留出充足同步时间，成功率更高，但回车后的等待感会更明显。" />
+                                                        </StackPanel>
+                                                    </Border>
+                                                    <TextBlock Margin="0,8,0,6"
+                                                               FontSize="11.5"
+                                                               Foreground="#64748B"
+                                                               LineHeight="17"
+                                                               TextWrapping="Wrap"
+                                                               Text="小技巧：日常可保持适中延迟；偶发没粘上时按「重试粘贴快捷键」即可秒补发。点击下方档位可快速填入：" />
+                                                    <WrapPanel>
+                                                        <Button Content="极速 250 ms"
+                                                                Tag="250"
+                                                                Margin="0,0,6,0"
+                                                                Click="OnDelayPresetClick"
+                                                                Style="{StaticResource PresetPillButtonStyle}" />
+                                                        <Button Content="推荐 400 ms"
+                                                                Tag="400"
+                                                                Margin="0,0,6,0"
+                                                                Click="OnDelayPresetClick"
+                                                                Style="{StaticResource PresetPillButtonStyle}" />
+                                                        <Button Content="稳定 650 ms"
+                                                                Tag="650"
+                                                                Click="OnDelayPresetClick"
+                                                                Style="{StaticResource PresetPillButtonStyle}" />
+                                                    </WrapPanel>
+                                                </StackPanel>
+                                            </Border>
+                                        </Grid>
+                                    </Popup>
+                                </StackPanel>
+                                <TextBlock Margin="0,2,0,0" FontSize="12" Foreground="#64748B" Text="按下回车后留给 NoMachine 同步剪贴板的等待时间（50 ~ 5000 ms）" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                <Border Background="#FFFFFF"
+                                        BorderBrush="#CBD5E1"
+                                        BorderThickness="1"
+                                        CornerRadius="7"
+                                        Height="30"
+                                        Padding="8,0"
+                                        SnapsToDevicePixels="True">
+                                    <TextBox x:Name="ClipboardSettleDelayTextBox"
+                                             AutomationProperties.AutomationId="ClipboardSettleDelayTextBox"
+                                             Width="56"
+                                             MaxLength="4"
+                                             InputMethod.IsInputMethodEnabled="False"
+                                             PreviewTextInput="OnDelayTextBoxPreviewTextInput"
+                                             DataObject.Pasting="OnDelayTextBoxPasting"
+                                             PreviewMouseWheel="OnDelayTextBoxPreviewMouseWheel"
+                                             ToolTip="可直接输入毫秒数，或在此处滚动鼠标滚轮（每次 ±50 ms）"
+                                             Background="Transparent"
+                                             BorderThickness="0"
+                                             FontSize="13"
+                                             Foreground="#0F172A"
+                                             HorizontalContentAlignment="Right"
+                                             VerticalContentAlignment="Center" />
+                                </Border>
+                                <TextBlock Margin="6,0,0,0"
+                                           FontSize="12.5"
+                                           Foreground="#64748B"
+                                           VerticalAlignment="Center"
+                                           Text="ms" />
+                            </StackPanel>
+                        </Grid>
+
+                        <Border Height="1" Margin="0,4,0,16" Background="#F1F5F9" SnapsToDevicePixels="True" />
+                        <TextBlock FontSize="14.5" FontWeight="SemiBold" Foreground="#0F172A" Text="气泡按键对应的远程粘贴动作" />
+                        <TextBlock Margin="0,4,0,12" FontSize="12.5" Foreground="#64748B" TextWrapping="Wrap" Text="点击快捷键按钮，再按下新的组合键即可修改；右侧选择对应的粘贴方式。" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="190" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <Button x:Name="EnterShortcutButton" AutomationProperties.AutomationId="EnterShortcutButton" Click="OnShortcutButtonClick" Tag="Enter" HorizontalAlignment="Left" Style="{StaticResource ModernSecondaryButtonStyle}" Height="30" Padding="8,0" />
+                            <ComboBox x:Name="EnterPasteMethodComboBox" AutomationProperties.AutomationId="EnterPasteMethodComboBox" Grid.Column="1" Height="32" DisplayMemberPath="DisplayName" SelectedValuePath="Method" Style="{StaticResource ModernComboBoxStyle}" />
+
+                            <Button x:Name="ControlShiftVShortcutButton" AutomationProperties.AutomationId="ControlShiftVShortcutButton" Grid.Row="1" Margin="0,10,0,0" Click="OnShortcutButtonClick" Tag="ControlShiftV" HorizontalAlignment="Left" Style="{StaticResource ModernSecondaryButtonStyle}" Height="30" Padding="8,0" />
+                            <ComboBox x:Name="ControlShiftVPasteMethodComboBox" AutomationProperties.AutomationId="ControlShiftVPasteMethodComboBox" Grid.Row="1" Grid.Column="1" Margin="0,10,0,0" Height="32" DisplayMemberPath="DisplayName" SelectedValuePath="Method" Style="{StaticResource ModernComboBoxStyle}" />
+
+                            <Button x:Name="OpenCodeShortcutButton" AutomationProperties.AutomationId="OpenCodeShortcutButton" Grid.Row="2" Margin="0,10,0,0" Click="OnShortcutButtonClick" Tag="OpenCode" HorizontalAlignment="Left" Style="{StaticResource ModernSecondaryButtonStyle}" Height="30" Padding="8,0" />
+                            <ComboBox x:Name="OpenCodePasteMethodComboBox" AutomationProperties.AutomationId="OpenCodePasteMethodComboBox" Grid.Row="2" Grid.Column="1" Margin="0,10,0,0" Height="32" DisplayMemberPath="DisplayName" SelectedValuePath="Method" Style="{StaticResource ModernComboBoxStyle}" />
+
+                            <Button x:Name="EmacsShortcutButton" AutomationProperties.AutomationId="EmacsShortcutButton" Grid.Row="3" Margin="0,10,0,0" Click="OnShortcutButtonClick" Tag="Emacs" HorizontalAlignment="Left" Style="{StaticResource ModernSecondaryButtonStyle}" Height="30" Padding="8,0" />
+                            <ComboBox x:Name="EmacsPasteMethodComboBox" AutomationProperties.AutomationId="EmacsPasteMethodComboBox" Grid.Row="3" Grid.Column="1" Margin="0,10,0,0" Height="32" DisplayMemberPath="DisplayName" SelectedValuePath="Method" Style="{StaticResource ModernComboBoxStyle}" />
+
+                            <Button x:Name="GvimShortcutButton" AutomationProperties.AutomationId="GvimShortcutButton" Grid.Row="4" Margin="0,10,0,0" Click="OnShortcutButtonClick" Tag="Gvim" HorizontalAlignment="Left" Style="{StaticResource ModernSecondaryButtonStyle}" Height="30" Padding="8,0" />
+                            <ComboBox x:Name="GvimPasteMethodComboBox" AutomationProperties.AutomationId="GvimPasteMethodComboBox" Grid.Row="4" Grid.Column="1" Margin="0,10,0,0" Height="32" DisplayMemberPath="DisplayName" SelectedValuePath="Method" Style="{StaticResource ModernComboBoxStyle}" />
+
+                            <Button x:Name="GenericTerminalShortcutButton" AutomationProperties.AutomationId="GenericTerminalShortcutButton" Grid.Row="5" Margin="0,10,0,0" Click="OnShortcutButtonClick" Tag="GenericTerminal" HorizontalAlignment="Left" Style="{StaticResource ModernSecondaryButtonStyle}" Height="30" Padding="8,0" />
+                            <ComboBox x:Name="GenericTerminalPasteMethodComboBox" AutomationProperties.AutomationId="GenericTerminalPasteMethodComboBox" Grid.Row="5" Grid.Column="1" Margin="0,10,0,0" Height="32" DisplayMemberPath="DisplayName" SelectedValuePath="Method" Style="{StaticResource ModernComboBoxStyle}" />
+
+                            <Button x:Name="CustomShortcutButton" AutomationProperties.AutomationId="CustomShortcutButton" Grid.Row="6" Margin="0,10,0,0" Click="OnShortcutButtonClick" Tag="Custom" HorizontalAlignment="Left" ToolTip="自定义：两侧都设置后才生效。录入时按 Delete 清除，按 Esc 取消" Style="{StaticResource ModernSecondaryButtonStyle}" Height="30" Padding="8,0" />
+                            <Grid Grid.Row="6" Grid.Column="1" Margin="0,10,0,0">
+                                <Button x:Name="CustomInputButton" AutomationProperties.AutomationId="CustomInputButton" Click="OnShortcutButtonClick" Tag="CustomInput" ToolTip="可录入键盘组合键，或按住 Ctrl / Alt / Shift 再点鼠标中键或右键" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Style="{StaticResource ModernSecondaryButtonStyle}" BorderBrush="#CBD5E1" FontWeight="Normal" Height="32" Padding="12,0" />
+                                <Button x:Name="CustomClearButton" AutomationProperties.AutomationId="CustomClearButton" Click="OnClearCustomClick" HorizontalAlignment="Right" Margin="0,0,4,0" ToolTip="清空自定义行的左右两侧" Style="{StaticResource WindowCloseButtonStyle}" />
+                            </Grid>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+                <Border Grid.Row="2"
+                        Margin="0,0,0,18"
+                        Padding="18,16"
+                        Background="#FFFFFF"
+                        BorderBrush="#E2E8F0"
+                        BorderThickness="1"
+                        CornerRadius="9"
+                        SnapsToDevicePixels="True">
+                    <StackPanel>
+                        <DockPanel LastChildFill="False" Margin="0,0,0,10">
+                            <TextBlock FontSize="14.5"
+                                       FontWeight="SemiBold"
+                                       Foreground="#0F172A"
+                                       VerticalAlignment="Center"
+                                       Text="自动更新" />
+                            <Border DockPanel.Dock="Right"
+                                    Background="#F1F5F9"
+                                    BorderBrush="#E2E8F0"
+                                    BorderThickness="1"
+                                    CornerRadius="4"
+                                    Padding="6,1"
+                                    VerticalAlignment="Center">
+                                <TextBlock x:Name="CurrentVersionText"
+                                           AutomationProperties.AutomationId="CurrentVersionText"
+                                           FontSize="11"
+                                           Foreground="#64748B"
+                                           Text="当前版本" />
+                            </Border>
+                        </DockPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
+                                <TextBlock FontSize="13.5" FontWeight="SemiBold" Foreground="#0F172A" Text="版本检查" />
+                                <TextBlock x:Name="UpdateStatusText"
+                                           AutomationProperties.AutomationId="UpdateStatusText"
+                                           Margin="0,2,0,0"
+                                           FontSize="12"
+                                           LineHeight="18"
+                                           Foreground="#64748B"
+                                           TextWrapping="Wrap"
+                                           Text="手动检查随时可用；未勾选下方选项时，启动过程不会联网。" />
+                            </StackPanel>
+                            <Button x:Name="CheckUpdateButton"
+                                    AutomationProperties.AutomationId="CheckUpdateButton"
+                                    Grid.Column="1"
+                                    Click="OnCheckUpdateClick"
+                                    VerticalAlignment="Center"
+                                    ToolTip="立即向 GitHub Releases 查询是否有新版本"
+                                    Style="{StaticResource ModernSecondaryButtonStyle}"
+                                    Height="30"
+                                    Padding="12,0"
+                                    Content="检查更新" />
+                        </Grid>
+                        <CheckBox x:Name="CheckUpdatesOnStartupCheckBox"
+                                  AutomationProperties.AutomationId="CheckUpdatesOnStartupCheckBox"
+                                  Margin="0,12,0,0"
+                                  HorizontalAlignment="Left"
+                                  Content="启动时自动检查更新"
+                                  ToolTip="每次启动在后台异步检查一次。只会显示新版本信息，不会自动下载或安装"
+                                  Style="{StaticResource ModernChipCheckBoxStyle}" />
+                    </StackPanel>
+                </Border>
+                <Grid Grid.Row="3">
+                    <StackPanel Orientation="Horizontal"
+                                HorizontalAlignment="Left"
+                                VerticalAlignment="Center">
+                        <CheckBox x:Name="AutoStartCheckBox"
+                                  AutomationProperties.AutomationId="AutoStartCheckBox"
+                                  Margin="0,0,8,0"
+                                  Content="开机自启动"
+                                  ToolTip="登录 Windows 后自动在后台启动并驻留托盘，不显示窗口"
+                                  Style="{StaticResource ModernChipCheckBoxStyle}" />
+                        <CheckBox x:Name="VisualEffectsCheckBox"
+                                  AutomationProperties.AutomationId="VisualEffectsCheckBox"
+                                  Content="动画与粘贴提示"
+                                  ToolTip="开启后具有气泡柔和淡入与“正在同步剪贴板并粘贴…”小胶囊；关闭后气泡无淡入动画且不显示粘贴中胶囊"
+                                  Style="{StaticResource ModernChipCheckBoxStyle}" />
+                    </StackPanel>
+                    <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+                        <Button Width="80" Style="{StaticResource ModernSecondaryButtonStyle}" Margin="0,0,8,0" Click="OnCancelButtonClick" Content="取消" />
+                        <Button Width="84" Style="{StaticResource ModernPrimaryButtonStyle}" IsDefault="True" Click="OnSaveClick" Content="保存" />
+                    </StackPanel>
+                </Grid>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

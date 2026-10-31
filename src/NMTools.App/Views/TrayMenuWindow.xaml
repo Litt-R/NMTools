@@ -1,0 +1,62 @@
+<Window x:Class="NMTools.App.Views.TrayMenuWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Width="200"
+        SizeToContent="Height"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ShowInTaskbar="False"
+        ShowActivated="True"
+        Topmost="True"
+        ResizeMode="NoResize"
+        WindowStartupLocation="Manual"
+        Deactivated="OnDeactivated"
+        PreviewKeyDown="OnPreviewKeyDown"
+        FontFamily="{StaticResource AppFont}"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType">
+    <Grid Margin="10">
+        <!-- 底层独立弥散阴影 -->
+        <Border CornerRadius="10"
+                Background="#0F172A"
+                Opacity="0.10">
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="16"
+                                  Direction="270"
+                                  Opacity="0.22"
+                                  ShadowDepth="4"
+                                  Color="#0F172A" />
+            </Border.Effect>
+        </Border>
+
+        <!-- 顶层菜单主体 -->
+        <Border Padding="6"
+                Background="#FFFFFFFF"
+                BorderBrush="#E2E8F0"
+                BorderThickness="1"
+                CornerRadius="10"
+                SnapsToDevicePixels="True">
+            <StackPanel>
+                <Button Click="OnOpenClick"
+                        Content="打开主面板"
+                        Style="{StaticResource TrayMenuButtonStyle}" />
+                <Button Click="OnSettingsClick"
+                        Content="设置"
+                        Style="{StaticResource TrayMenuButtonStyle}" />
+                <Button Click="OnOpenLogsClick"
+                        Content="打开诊断日志"
+                        Style="{StaticResource TrayMenuButtonStyle}" />
+                <Border Height="1"
+                        Margin="6,4"
+                        Background="#F1F5F9"
+                        SnapsToDevicePixels="True" />
+                <Button Click="OnExitClick"
+                        Content="退出 NMTools"
+                        Style="{StaticResource TrayMenuButtonStyle}" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

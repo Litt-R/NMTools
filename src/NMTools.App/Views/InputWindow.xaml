@@ -1,0 +1,134 @@
+<Window x:Class="NMTools.App.Views.InputWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="NMTools 输入"
+        Width="480"
+        MinWidth="340"
+        MaxWidth="640"
+        MinHeight="58"
+        MaxHeight="420"
+        WindowStartupLocation="Manual"
+        SizeToContent="Height"
+        ShowInTaskbar="False"
+        Topmost="True"
+        ResizeMode="NoResize"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        ShowActivated="True"
+        Opacity="0"
+        Background="Transparent"
+        FontFamily="{StaticResource AppFont}"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType"
+        PreviewMouseLeftButtonDown="OnPreviewMouseLeftButtonDown">
+    <Grid Margin="12">
+        <!-- 底层：聚焦微光呼吸光晕 (Active Focus Ring) -->
+        <Border CornerRadius="14"
+                Background="#3B82F6"
+                Opacity="0.22">
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="14"
+                                  Direction="270"
+                                  Opacity="0.30"
+                                  ShadowDepth="2"
+                                  Color="#2563EB" />
+            </Border.Effect>
+        </Border>
+
+        <!-- 中层：环境基础立体弥散阴影 -->
+        <Border CornerRadius="12"
+                Background="#0F172A"
+                Opacity="0.08">
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="18"
+                                  Direction="270"
+                                  Opacity="0.20"
+                                  ShadowDepth="5"
+                                  Color="#0F172A" />
+            </Border.Effect>
+        </Border>
+
+        <!-- 顶层：白底卡片、聚焦蓝光边框、独立锐利圆角 -->
+        <Border x:Name="BubbleBorder"
+                Padding="15,11"
+                Background="#FFFFFFFF"
+                BorderBrush="#3B82F6"
+                BorderThickness="1.2"
+                CornerRadius="12"
+                SnapsToDevicePixels="True">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <TextBox x:Name="InputTextBox"
+                         Grid.Row="0"
+                         Padding="0"
+                         AcceptsReturn="True"
+                         Background="Transparent"
+                         BorderThickness="0"
+                         FontSize="15"
+                         FontFamily="{StaticResource AppFont}"
+                         Foreground="#0F172A"
+                         CaretBrush="#2563EB"
+                         HorizontalScrollBarVisibility="Disabled"
+                         MaxLength="100000"
+                         MinLines="1"
+                         MaxLines="8"
+                         TextChanged="OnTextChanged"
+                         TextWrapping="Wrap"
+                         VerticalContentAlignment="Center"
+                         VerticalScrollBarVisibility="Auto" />
+
+                <!-- 空文本时的按键提示占位符 -->
+                <TextBlock x:Name="PlaceholderText"
+                           Grid.Row="0"
+                           IsHitTestVisible="False"
+                           Margin="2,0,0,0"
+                           VerticalAlignment="Center"
+                           FontSize="13"
+                           Foreground="#94A3B8"
+                           Text="输入文字… Enter发送 · Shift+Enter换行 · Esc取消 · Alt+拖拽"
+                           TextTrimming="CharacterEllipsis"
+                           TextWrapping="NoWrap" />
+
+                <!-- 底部一行：左侧轮换小提示，右侧动态字数/行数胶囊徽章；仅有文字时显示 -->
+                <Grid x:Name="FooterRow"
+                      Grid.Row="1"
+                      Margin="0,6,0,0"
+                      Visibility="Collapsed"
+                      IsHitTestVisible="False">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="TipText"
+                               Grid.Column="0"
+                               Margin="2,0,10,0"
+                               VerticalAlignment="Center"
+                               FontSize="10.5"
+                               Foreground="#94A3B8"
+                               TextTrimming="CharacterEllipsis"
+                               TextWrapping="NoWrap" />
+                    <Border x:Name="CharCountBadge"
+                            Grid.Column="1"
+                            HorizontalAlignment="Right"
+                            Padding="6,1"
+                            Background="#F1F5F9"
+                            BorderBrush="#E2E8F0"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            SnapsToDevicePixels="True">
+                        <TextBlock x:Name="CharCountText"
+                                   FontSize="11"
+                                   FontWeight="Medium"
+                                   Foreground="#64748B" />
+                    </Border>
+                </Grid>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>
