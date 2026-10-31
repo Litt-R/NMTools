@@ -363,6 +363,35 @@ public sealed class SettingsWindowUiTests
     }
 
     [RequiresNmToolsAppFact]
+    public void SettingsWindow_HelpTextIsNotClippedByControls()
+    {
+        using var env = new IsolatedAppEnvironment();
+        using var session = env.LaunchSettings();
+
+        // 每一行都是「说明文字在左、控件在右」的两列布局。说明写长一点就会被右列压住，
+        // 出现肉眼可见的文字截断。这里逐行断言两者的边界不相交。
+        var rows = new (string TextId, string ControlId)[]
+        {
+            ("GlobalHotkeyHelpText", "GlobalHotkeyButton"),
+            ("RetryHotkeyHelpText", "RetryHotkeyButton"),
+        };
+
+        foreach (var (textId, controlId) in rows)
+        {
+            var text = session.TryFind(textId)
+                ?? throw new InvalidOperationException($"找不到说明文字 {textId}");
+            var control = session.Find(controlId);
+
+            var textRect = text.BoundingRectangle;
+            var controlRect = control.BoundingRectangle;
+
+            Assert.True(
+                textRect.Right <= controlRect.Left + 1,
+                $"{textId} 的右边界 {textRect.Right} 与 {controlId} 的左边界 {controlRect.Left} 重叠，文字会被遮挡。");
+        }
+    }
+
+    [RequiresNmToolsAppFact]
     public void UpdateGroup_ShowsCurrentVersionAndDefaultsToUnchecked()
     {
         using var env = new IsolatedAppEnvironment();

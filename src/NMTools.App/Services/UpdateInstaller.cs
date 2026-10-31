@@ -137,7 +137,11 @@ public sealed class UpdateInstaller : IDisposable
                 FileName = launchPath,
                 Arguments = $"--pid {Environment.ProcessId} --app-dir \"{normalizedAppDirectory}\" --staged-dir \"{normalizedContent}\"",
                 UseShellExecute = false,
-                WorkingDirectory = stagingDirectory,
+
+                // 工作目录必须是发布包之外的路径。更新器要重命名 program/，
+                // 而 Windows 不允许重命名任何进程的工作目录或其祖先目录——
+                // 把工作目录设在包内会让 Directory.Move 直接报 Access denied。
+                WorkingDirectory = Path.GetTempPath(),
             });
 
             if (process is null)

@@ -58,7 +58,16 @@ internal static class Program
             UpdateCleanup.WriteVerifyMarker(options.AppDirectory, newVersion, logger.Write);
 
             // 重新拉起程序，让用户看到的就是升级后的界面。启动入口优先用 VBS（无控制台窗口）。
-            LaunchApp(options.AppDirectory, logger.Write);
+            // --no-restart 供自动化测试使用：不启动程序，便于在清理发生前检查替换结果。
+            if (!options.NoRestart)
+            {
+                LaunchApp(options.AppDirectory, logger.Write);
+            }
+            else
+            {
+                logger.Write("skipped relaunch (--no-restart)");
+            }
+
             return 0;
         }
         catch (Exception exception)
@@ -173,15 +182,26 @@ public sealed record UpdaterOptions(
     string StagedDirectory,
     string StagingRoot)
 {
+    /// <summary>替换完成后不重新启动程序。仅供自动化测试使用。</summary>
+    public bool NoRestart { get; init; }
+
     public static UpdaterOptions? Parse(string[] args)
     {
         int? pid = null;
         string? appDirectory = null;
         string? stagedDirectory = null;
         string? stagingRoot = null;
+        var noRestart = false;
 
         for (var i = 0; i < args.Length; i++)
         {
+            // 开关型参数不跟取值，单独处理，避免被下面的"必须有下一个参数"判为非法。
+            if (args[i] == "--no-restart")
+            {
+                noRestart = true;
+                continue;
+            }
+
             if (i + 1 >= args.Length)
             {
                 return null;
@@ -230,7 +250,10 @@ public sealed record UpdaterOptions(
             pid.Value,
             normalizedApp,
             normalizedStaged,
-            stagingRoot ?? string.Empty);
+            stagingRoot ?? string.Empty)
+        {
+            NoRestart = noRestart,
+        };
     }
 }
 

@@ -80,14 +80,15 @@ public sealed class UpdateApplier
         //    删掉它，改名就能顺利进行；新版本首次启动会自己重新解压。
         TryDeleteRuntimeCache(appDirectory);
 
-        // 1. 原子改名：旧版本整体挪到 program.old/。
+        // 1. 先复制旧目录做备份（而不是改名）。
         //
-        // 进程退出和文件句柄释放不是同一时刻：Process.WaitForExit 返回后，
-        // Windows 仍可能短暂持有 exe 的句柄，此时 Directory.Move 会抛 IOException。
-        // 重试几次可以覆盖这段窗口。
-        if (!TryMoveDirectoryWithRetry(appDirectory, backupDirectory, out var failureType))
+        // 最初用 Directory.Move 做原子改名，但在真实环境里长期失败：即使主程序已退出，
+        // 目录仍被某个句柄占着（杀软扫描、或 Windows 自身的延迟释放），改不了名。
+        // 复制虽然慢一些，但只依赖文件读取——实测更可靠，且同样保留完整旧版本。
+        if (!TryCopyDirectoryWithRetry(appDirectory, backupDirectory, out var failureType))
         {
-            _log($"backup move failed after retries: {failureType}");
+            _log($"backup copy failed after retries: {failureType}");
+            CleanupPartialDirectory(backupDirectory);
             return ApplyResult.Failure(ApplyFailureReason.BackupFailed);
         }
 
@@ -95,11 +96,10 @@ public sealed class UpdateApplier
 
         try
         {
-            // 2. 直接从解压结果复制新版本到 program/。
+            // 2. 就地替换：清掉 program/ 里除用户数据之外的内容，再写入新版本。
+            //    不删除 program/ 本身——目录被锁时删不掉，而里面的文件是可以逐个替换的。
+            ClearReplaceableContent(appDirectory);
             CopyDirectory(newProgramSource, appDirectory);
-
-            // 3. 把用户数据从备份里搬回来。这一步失败也必须回滚，否则用户设置就丢了。
-            RestorePreservedData(backupDirectory, appDirectory);
             _log("new version applied");
             return ApplyResult.Success(backupDirectory);
         }
@@ -108,28 +108,110 @@ public sealed class UpdateApplier
                 or UnauthorizedAccessException
                 or OperationCanceledException)
         {
-            _log($"apply failed: {exception.GetType().Name}");
+            _log($"apply failed: {exception.GetType().Name}: {exception.Message}");
             TryRollback(appDirectory, backupDirectory);
             return ApplyResult.Failure(ApplyFailureReason.ApplyFailed);
         }
     }
 
     /// <summary>
-    /// 回滚：删除半成品 <c>program/</c>，把备份改回原名。
+    /// 清掉 <c>program/</c> 下除用户数据之外的所有条目。
+    ///
+    /// 只删内容、不删目录本身，是为了绕开"目录被句柄占用时无法删除/改名"的问题。
+    /// 删不掉的文件记日志但不中止：后续复制会覆盖同名文件，
+    /// 剩下的旧文件留在原处不影响新版本运行。
+    /// </summary>
+    private void ClearReplaceableContent(string appDirectory)
+    {
+        foreach (var entry in Directory.EnumerateFileSystemEntries(appDirectory))
+        {
+            var name = Path.GetFileName(entry);
+            if (PortableLayout.IsPreservedPath(name))
+            {
+                continue;
+            }
+
+            try
+            {
+                if (Directory.Exists(entry))
+                {
+                    Directory.Delete(entry, recursive: true);
+                }
+                else
+                {
+                    File.Delete(entry);
+                }
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                // 删不掉就让后续复制覆盖它。
+                _log($"could not remove {name}: {exception.GetType().Name}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// 带重试的目录复制。先复制再替换的方案不依赖目录改名，
+    /// 因此不会因为目录句柄被持有而整体失败。
+    /// </summary>
+    private bool TryCopyDirectoryWithRetry(string source, string destination, out string? failureType)
+    {
+        var delays = new[] { 100, 200, 400 };
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                CopyDirectory(source, destination);
+                failureType = null;
+                return true;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                if (attempt >= delays.Length)
+                {
+                    failureType = $"{exception.GetType().Name}: {exception.Message}";
+                    return false;
+                }
+
+                _log($"backup copy attempt {attempt + 1} failed ({exception.GetType().Name}), retrying");
+                CleanupPartialDirectory(destination);
+                Thread.Sleep(delays[attempt]);
+            }
+        }
+    }
+
+    private static void CleanupPartialDirectory(string path)
+    {
+        try
+        {
+            if (Directory.Exists(path))
+            {
+                Directory.Delete(path, recursive: true);
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+        }
+    }
+
+    /// <summary>
+    /// 回滚：用备份内容覆盖 <c>program/</c>。
+    ///
+    /// 同样不依赖目录改名——与备份阶段用同一套机制，避免在出问题的环境下
+    /// 回滚本身也失败。备份目录保持不动，回滚后仍可由清理流程处理。
     /// </summary>
     public bool Rollback(string appDirectory, string backupDirectory)
     {
         try
         {
-            if (Directory.Exists(appDirectory))
+            if (!Directory.Exists(backupDirectory))
             {
-                Directory.Delete(appDirectory, recursive: true);
+                _log("rollback skipped: backup directory is missing");
+                return false;
             }
 
-            if (Directory.Exists(backupDirectory))
-            {
-                Directory.Move(backupDirectory, appDirectory);
-            }
+            ClearReplaceableContent(appDirectory);
+            CopyDirectory(backupDirectory, appDirectory, skipDirectories: [PortableLayout.DataDirectoryName, PortableLayout.LogsDirectoryName]);
 
             _log("rolled back to previous version");
             return true;
@@ -194,7 +276,9 @@ public sealed class UpdateApplier
                     return false;
                 }
 
-                _log($"backup move attempt {attempt + 1} failed ({exception.GetType().Name}), retrying");
+                // 只记类型不够——IOException 的 Message 会包含具体原因（被占用、路径问题等）。
+                // 这里不含任何用户数据，可以安全落日志。
+                _log($"backup move attempt {attempt + 1} failed ({exception.GetType().Name}): {exception.Message}");
                 Thread.Sleep(delays[attempt]);
             }
         }
@@ -273,26 +357,6 @@ public sealed class UpdateApplier
         return File.Exists(Path.Combine(root, PortableLayout.AppExecutableName)) ? root : null;
     }
 
-    private void RestorePreservedData(string backupDirectory, string targetAppDirectory)
-    {
-        foreach (var directoryName in new[] { PortableLayout.DataDirectoryName, PortableLayout.LogsDirectoryName })
-        {
-            var source = Path.Combine(backupDirectory, directoryName);
-            if (!Directory.Exists(source))
-            {
-                continue;
-            }
-
-            var destination = Path.Combine(targetAppDirectory, directoryName);
-            if (Directory.Exists(destination))
-            {
-                Directory.Delete(destination, recursive: true);
-            }
-
-            CopyDirectory(source, destination);
-            _log($"restored {directoryName}/");
-        }
-    }
 
     private void TryRollback(string appDirectory, string backupDirectory)
     {
@@ -302,7 +366,14 @@ public sealed class UpdateApplier
         }
     }
 
-    private static void CopyDirectory(string source, string destination)
+    /// <param name="skipDirectories">
+    /// 复制时跳过的顶层子目录名。回滚时用它保留现有的 <c>data/</c> 与 <c>logs/</c>，
+    /// 避免用备份里可能过时的设置覆盖用户当前数据。
+    /// </param>
+    private static void CopyDirectory(
+        string source,
+        string destination,
+        IReadOnlyCollection<string>? skipDirectories = null)
     {
         Directory.CreateDirectory(destination);
         foreach (var file in Directory.EnumerateFiles(source))
@@ -312,7 +383,14 @@ public sealed class UpdateApplier
 
         foreach (var directory in Directory.EnumerateDirectories(source))
         {
-            CopyDirectory(directory, Path.Combine(destination, Path.GetFileName(directory)));
+            var name = Path.GetFileName(directory);
+            if (skipDirectories is not null
+                && skipDirectories.Contains(name, StringComparer.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            CopyDirectory(directory, Path.Combine(destination, name));
         }
     }
 

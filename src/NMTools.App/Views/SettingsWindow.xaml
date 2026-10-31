@@ -1,4 +1,4 @@
-<Window x:Class="NMTools.App.Views.SettingsWindow"
+﻿<Window x:Class="NMTools.App.Views.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="NMTools 设置"
@@ -69,7 +69,7 @@
                             </Grid.ColumnDefinitions>
                             <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
                                 <TextBlock FontSize="13.5" FontWeight="SemiBold" Foreground="#0F172A" Text="唤起气泡全局快捷键" />
-                                <TextBlock Margin="0,2,0,0" FontSize="12" Foreground="#64748B" Text="在 NoMachine 远程窗口内按下该组合键打开输入气泡" />
+                                <TextBlock Margin="0,2,0,0" FontSize="12" Foreground="#64748B" AutomationProperties.AutomationId="GlobalHotkeyHelpText" TextWrapping="Wrap" Text="在 NoMachine 远程窗口内按下该组合键打开输入气泡" />
                             </StackPanel>
                             <Button x:Name="GlobalHotkeyButton"
                                     AutomationProperties.AutomationId="GlobalHotkeyButton"
@@ -90,7 +90,7 @@
                             </Grid.ColumnDefinitions>
                             <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
                                 <TextBlock FontSize="13.5" FontWeight="SemiBold" Foreground="#0F172A" Text="重试粘贴全局快捷键" />
-                                <TextBlock Margin="0,2,0,0" FontSize="12" Foreground="#64748B" Text="因 NoMachine 同步延迟未粘上时，直接补发上次粘贴动作" />
+                                <TextBlock Margin="0,2,0,0" FontSize="12" Foreground="#64748B" AutomationProperties.AutomationId="RetryHotkeyHelpText" TextWrapping="Wrap" Text="因 NoMachine 同步延迟未粘上时，直接补发上次粘贴动作" />
                             </StackPanel>
                             <Button x:Name="RetryHotkeyButton"
                                     AutomationProperties.AutomationId="RetryHotkeyButton"
@@ -111,7 +111,7 @@
                             </Grid.ColumnDefinitions>
                             <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <TextBlock FontSize="13.5" FontWeight="SemiBold" Foreground="#0F172A" VerticalAlignment="Center" Text="剪贴板同步等待延迟" />
+                                    <TextBlock FontSize="13.5" FontWeight="SemiBold" Foreground="#0F172A" VerticalAlignment="Center" TextWrapping="Wrap" Text="剪贴板同步等待延迟" />
                                     <Button x:Name="SyncDelayHelpButton"
                                             AutomationProperties.AutomationId="SyncDelayHelpButton"
                                             Click="OnSyncDelayHelpClick"
@@ -232,7 +232,7 @@
                                         </Grid>
                                     </Popup>
                                 </StackPanel>
-                                <TextBlock Margin="0,2,0,0" FontSize="12" Foreground="#64748B" Text="按下回车后留给 NoMachine 同步剪贴板的等待时间（50 ~ 5000 ms）" />
+                                <TextBlock Margin="0,2,0,0" FontSize="12" Foreground="#64748B" TextWrapping="Wrap" Text="按下回车后等待剪贴板同步的时间" />
                             </StackPanel>
                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                                 <Border Background="#FFFFFF"
@@ -258,11 +258,10 @@
                                              HorizontalContentAlignment="Right"
                                              VerticalContentAlignment="Center" />
                                 </Border>
-                                <TextBlock Margin="6,0,0,0"
-                                           FontSize="12.5"
-                                           Foreground="#64748B"
-                                           VerticalAlignment="Center"
-                                           Text="ms" />
+                                <StackPanel VerticalAlignment="Center" Margin="6,0,0,0">
+                                    <TextBlock FontSize="12.5" Foreground="#64748B" Text="ms" />
+                                    <TextBlock FontSize="10.5" Foreground="#94A3B8" Text="50~5000" />
+                                </StackPanel>
                             </StackPanel>
                         </Grid>
 
