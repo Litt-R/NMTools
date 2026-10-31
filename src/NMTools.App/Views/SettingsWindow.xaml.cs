@@ -436,7 +436,8 @@ public partial class SettingsWindow : Window
     private async void OnCheckUpdateClick(object sender, RoutedEventArgs e)
     {
         e.Handled = true;
-        if (_updateService is null || _updateService.IsChecking)
+        var updateService = _updateService;
+        if (updateService is null || updateService.IsBusy)
         {
             return;
         }
@@ -447,7 +448,7 @@ public partial class SettingsWindow : Window
         try
         {
             // 以设置窗口为 Owner：它是模态对话框，用主窗口做 Owner 的弹窗会被压在它后面。
-            await _updateService.CheckAsync(interactive: true, owner: this);
+            await updateService.CheckAsync(interactive: true, owner: this);
         }
         finally
         {

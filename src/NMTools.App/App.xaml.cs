@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using NMTools.App.Infrastructure;
+using NMTools.App.Services;
 
 namespace NMTools.App;
 
@@ -29,8 +30,24 @@ public partial class App : System.Windows.Application
         IsUiAutomationSettingsMode = IsUiAutomationMode
             && e.Args.Contains("--ui-test-settings", StringComparer.OrdinalIgnoreCase);
 
+        // UI 自动化测试不能往用户的真实日志目录里写诊断内容。
+        // 日志要早于排期更新初始化：升级流程本身也需要留下记录。
+        _diagnosticLog = IsUiAutomationMode ? null : DiagnosticLog.CreateForAppDirectory();
+        _diagnosticLog?.Info(
+            "app.start",
+            $"version={typeof(App).Assembly.GetName().Version} session={System.Diagnostics.Process.GetCurrentProcess().SessionId} "
+            + $"os={Environment.OSVersion.VersionString} is64BitProcess={Environment.Is64BitProcess}");
+
         if (!IsUiAutomationMode)
         {
+            // 必须在单实例检查和热键注册之前处理排期更新：如果本次启动要升级，
+            // 我们马上就会退出，没必要先占用互斥体和全局热键。
+            if (TryApplyScheduledUpdate())
+            {
+                Shutdown();
+                return;
+            }
+
             _singleInstanceService = SingleInstanceService.TryCreate();
             if (_singleInstanceService is null)
             {
@@ -47,14 +64,13 @@ public partial class App : System.Windows.Application
                 OnRequestExit);
         }
 
-        // UI 自动化测试不能往用户的真实日志目录里写诊断内容。
-        _diagnosticLog = IsUiAutomationMode ? null : DiagnosticLog.CreateForAppDirectory();
-        _diagnosticLog?.Info(
-            "app.start",
-            $"version={typeof(App).Assembly.GetName().Version} session={System.Diagnostics.Process.GetCurrentProcess().SessionId} "
-            + $"os={Environment.OSVersion.VersionString} is64BitProcess={Environment.Is64BitProcess}");
-
         DispatcherUnhandledException += OnDispatcherUnhandledException;
+
+        // 走到这里说明本次启动没有被排期更新接管，启动本身是成功的。
+        // 清掉可能残留的待办标记：更新若已由更新器完成，这里就是收尾；
+        // 若标记还在但暂存目录已被清理，也在此一并清掉，避免下次启动反复尝试。
+        PendingUpdateStore.Clear(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar));
+
         _mainWindow = new MainWindow(_diagnosticLog);
         if (_trayIconService is not null)
         {
@@ -83,6 +99,56 @@ public partial class App : System.Windows.Application
 
         _mainWindow.Show();
         _mainWindow.StartStartupUpdateCheckIfEnabled();
+    }
+
+    /// <summary>
+    /// 如果上次选择了「下次启动时更新」，在启动早期把控制权交给更新器并返回 true，
+    /// 调用方应立刻退出。
+    ///
+    /// 待办里记录了更新包的解压目录；只要它还在就直接应用。目录已被清理时清掉待办，
+    /// 按普通启动继续——宁可这次不升级，也不能让程序无法启动。
+    /// </summary>
+    private bool TryApplyScheduledUpdate()
+    {
+        var appDirectory = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
+        PendingUpdate? pending;
+        try
+        {
+            pending = PendingUpdateStore.Load(appDirectory);
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            PendingUpdateStore.Clear(appDirectory);
+            return false;
+        }
+
+        if (pending is null)
+        {
+            return false;
+        }
+
+        if (!Directory.Exists(pending.ContentDirectory))
+        {
+            // 暂存目录没了（用户清理过或磁盘被清），排期失效。
+            _diagnosticLog?.Warn("update.scheduled.missingStaging", "staged content is gone, clearing marker");
+            PendingUpdateStore.Clear(appDirectory);
+            return false;
+        }
+
+        var installer = new UpdateInstaller(_diagnosticLog);
+        var updaterPid = installer.LaunchUpdater(appDirectory, pending.ContentDirectory);
+        installer.Dispose();
+
+        if (updaterPid is null)
+        {
+            _diagnosticLog?.Warn("update.scheduled.updaterStartFailed", "could not start updater");
+            PendingUpdateStore.Clear(appDirectory);
+            return false;
+        }
+
+        _diagnosticLog?.Info("update.scheduled.applying", $"version={pending.Version} pid={updaterPid}");
+        return true;
     }
 
     private static bool IsRunningFromUiAutomationDirectory()

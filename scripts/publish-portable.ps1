@@ -7,7 +7,9 @@ $programDirectory = Join-Path $publishRoot 'program'
 $dataDirectory = Join-Path $programDirectory 'data'
 $dataBackupDirectory = Join-Path $projectRoot 'publish\.data-backup'
 $stagingDirectory = Join-Path $projectRoot 'publish\.staging-NMTools-win-x64'
+$updaterStagingDirectory = Join-Path $projectRoot 'publish\.staging-NMTools-updater'
 $projectFile = Join-Path $projectRoot 'src\NMTools.App\NMTools.App.csproj'
+$updaterProjectFile = Join-Path $projectRoot 'src\NMTools.Updater\NMTools.Updater.csproj'
 
 if (Test-Path $dataBackupDirectory) {
     # 上一次发布没有走完还原，里面可能是唯一一份用户设置，不能直接覆盖。放在最前面检查，避免白白编译一遍。
@@ -34,7 +36,12 @@ if (Test-Path $stagingDirectory) {
     Remove-Item -LiteralPath $stagingDirectory -Recurse -Force
 }
 
+if (Test-Path $updaterStagingDirectory) {
+    Remove-Item -LiteralPath $updaterStagingDirectory -Recurse -Force
+}
+
 New-Item -ItemType Directory -Force -Path $stagingDirectory | Out-Null
+New-Item -ItemType Directory -Force -Path $updaterStagingDirectory | Out-Null
 
 & $dotnet publish $projectFile `
     --configuration Release `
@@ -48,6 +55,26 @@ New-Item -ItemType Directory -Force -Path $stagingDirectory | Out-Null
 
 if ($LASTEXITCODE -ne 0) {
     throw "dotnet publish failed with exit code $LASTEXITCODE"
+}
+
+# 更新器是独立进程：主程序无法替换正在运行的自身，必须由它来完成文件替换。
+# 单独发布到自己的暂存目录，稍后一并放进 program\。
+# 更新器启用 trimming：它不用 WPF/WinForms，裁剪后从 ~69 MB 降到 ~10 MB，
+# 发布包因此只比原来大十几 MB，而不是翻倍。
+& $dotnet publish $updaterProjectFile `
+    --configuration Release `
+    --runtime win-x64 `
+    --self-contained true `
+    --output $updaterStagingDirectory `
+    --no-restore `
+    -p:PublishSingleFile=true `
+    -p:IncludeNativeLibrariesForSelfExtract=true `
+    -p:EnableCompressionInSingleFile=true `
+    -p:PublishTrimmed=true `
+    -p:TrimMode=partial
+
+if ($LASTEXITCODE -ne 0) {
+    throw "dotnet publish (updater) failed with exit code $LASTEXITCODE"
 }
 
 if (Test-Path $dataDirectory) {
@@ -67,7 +94,17 @@ Get-ChildItem -LiteralPath $stagingDirectory -Force |
     Where-Object { $_.Extension -notin @('.pdb', '.xml') } |
     Move-Item -Destination $programDirectory
 
+# 更新器与主程序并列放在 program\，文件名固定为 NMTools.Updater.exe：
+# 主程序按这个固定名字启动它，不做任何运行时查找。
+$updaterExe = Join-Path $updaterStagingDirectory 'NMTools.Updater.exe'
+if (-not (Test-Path $updaterExe)) {
+    throw "更新器未生成：$updaterExe"
+}
+
+Copy-Item -LiteralPath $updaterExe -Destination (Join-Path $programDirectory 'NMTools.Updater.exe') -Force
+
 Remove-Item -LiteralPath $stagingDirectory -Recurse -Force
+Remove-Item -LiteralPath $updaterStagingDirectory -Recurse -Force
 
 if (Test-Path $dataBackupDirectory) {
     Copy-Item -LiteralPath $dataBackupDirectory -Destination $dataDirectory -Recurse -Force
@@ -156,16 +193,35 @@ if (-not (Test-Path (Join-Path $archiveProgram 'NMTools.App.exe'))) {
     throw '压缩包中缺少 NMTools.App.exe，已中止打包。'
 }
 
+# 更新器必须随包分发：没有它，新版本既无法自动更新，也无法被更新。
+# 缺了就不发布，否则会产出"能检查更新但更新不了"的包。
+if (-not (Test-Path (Join-Path $archiveProgram 'NMTools.Updater.exe'))) {
+    throw '压缩包中缺少 NMTools.Updater.exe，已中止打包。'
+}
+
 # 压缩包与历史版本保持一致，直接放在 publish\ 根目录。
 # 注意 $publishRoot 是 publish\NMTools-win-x64（程序目录本身），
 # 因此这里必须从它的父目录取 publish\，否则压缩包会落进程序目录内部。
-$finalArchive = Join-Path (Split-Path -Parent $publishRoot) $archiveName
+$publishDirectory = Split-Path -Parent $publishRoot
+$finalArchive = Join-Path $publishDirectory $archiveName
 if (Test-Path $finalArchive) {
     Remove-Item -LiteralPath $finalArchive -Force
 }
 
 Compress-Archive -LiteralPath $archiveRoot -DestinationPath $finalArchive -CompressionLevel Optimal
 Remove-Item -LiteralPath $stagingForArchive -Recurse -Force
+
+# ---------------------------------------------------------------------------
+# 生成校验文件 SHA256SUMS.txt。
+#
+# 客户端下载 zip 后用它比对内容哈希。它和 zip 一起作为 Release 的两个资产，
+# 客户端分别下载再比对，因此能发现"下载内容被替换"，而不只是"下载损坏"。
+# 这个文件不入包，只作为独立资产上传。
+# ---------------------------------------------------------------------------
+$archiveHash = (Get-FileHash -LiteralPath $finalArchive -Algorithm SHA256).Hash.ToLowerInvariant()
+$checksumFile = Join-Path $publishDirectory 'SHA256SUMS.txt'
+Set-Content -LiteralPath $checksumFile -Value "$archiveHash  $archiveName" -Encoding ascii
+Write-Host "已生成校验文件：$checksumFile" -ForegroundColor Yellow
 
 $archiveSize = [math]::Round((Get-Item $finalArchive).Length / 1MB, 1)
 

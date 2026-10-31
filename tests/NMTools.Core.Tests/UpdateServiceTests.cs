@@ -115,14 +115,14 @@ public sealed class UpdateServiceTests
 
         var first = service.CheckAsync(interactive: false);
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.True(service.IsChecking);
+        Assert.True(service.IsBusy);
         var second = service.CheckAsync(interactive: false);
         release.SetResult();
         await Task.WhenAll(first, second);
 
         // 第二次调用被直接返回，不会产生第二个弹窗。
         Assert.Single(prompts);
-        Assert.False(service.IsChecking);
+        Assert.False(service.IsBusy);
     }
 
     [Fact]

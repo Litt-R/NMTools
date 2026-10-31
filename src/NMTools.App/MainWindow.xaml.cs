@@ -47,7 +47,12 @@ public partial class MainWindow : Window
         _options = _appSettingsStore.Load() ?? new InputBridgeOptions();
         _clipboardService = new WpfClipboardService(_log);
         _textInjectionService = new SendInputTextInjectionService(_targetWindowService, _log);
-        _updateService = new UpdateService(AssemblyVersion, () => this, _log);
+        _updateService = new UpdateService(
+            AssemblyVersion,
+            () => this,
+            _log,
+            appDirectory: AppContext.BaseDirectory);
+        _updateService.UpdateReadyToApply += OnUpdateReadyToApply;
         InitializeComponent();
         VersionText.Text = VersionLabel.Format(AssemblyVersion);
         ApplyInitialPlacement();
@@ -162,6 +167,26 @@ public partial class MainWindow : Window
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
         UpdateShortcutDescription();
+    }
+
+    /// <summary>
+    /// 用户选择「立即重启更新」：保存状态、释放资源、退出，让更新器替换文件。
+    ///
+    /// 更新器会等待本进程真正结束才开始改文件，因此这里只需要正常退出，
+    /// 不需要自己等待或轮询。
+    /// </summary>
+    private void OnUpdateReadyToApply(object? sender, int updaterPid)
+    {
+        _log?.Info("update.apply.exit", $"updaterPid={updaterPid}");
+        try
+        {
+            DisposeResources();
+        }
+        finally
+        {
+            // 用 Shutdown 而不是 Close：后者会被 OnClosing 拦截成"隐藏到托盘"。
+            System.Windows.Application.Current?.Shutdown();
+        }
     }
 
     /// <summary>
