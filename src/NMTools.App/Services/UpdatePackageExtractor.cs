@@ -23,6 +23,45 @@ public sealed class UpdatePackageExtractor : IUpdatePackageExtractor
         _log = log;
     }
 
+    /// <summary>
+    /// 从解压根目录里找出真正的包根：含 <c>program/NMTools.App.exe</c> 的那一层。
+    ///
+    /// 发布包由 <c>Compress-Archive</c> 生成，会在 zip 里套一层版本目录；
+    /// 这里同时接受"套一层"和"没有套"两种形状，避免因为打包方式变化就更新不了。
+    /// </summary>
+    private static string? ResolvePackageRoot(string extractedRoot)
+    {
+        if (HasAppExecutable(extractedRoot))
+        {
+            return extractedRoot;
+        }
+
+        // 只向下看一层：再深就不是发布包的结构了。
+        DirectoryInfo[] children;
+        try
+        {
+            children = new DirectoryInfo(extractedRoot).GetDirectories();
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+
+        foreach (var child in children)
+        {
+            if (HasAppExecutable(child.FullName))
+            {
+                return child.FullName;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool HasAppExecutable(string root) =>
+        File.Exists(Path.Combine(root, PortableLayout.AppDirectoryName, PortableLayout.AppExecutableName))
+        || File.Exists(Path.Combine(root, PortableLayout.AppExecutableName));
+
     public UpdateExtractResult Extract(string archivePath, string destinationDirectory)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(archivePath);
@@ -106,16 +145,18 @@ public sealed class UpdatePackageExtractor : IUpdatePackageExtractor
                 entry.ExtractToFile(target, overwrite: false);
             }
 
-            // 必需文件校验：没有主程序 exe 的包不能用于更新。
-            if (!File.Exists(Path.Combine(root, PortableLayout.AppDirectoryName, PortableLayout.AppExecutableName))
-                && !File.Exists(Path.Combine(root, PortableLayout.AppExecutableName)))
+            // 发布包在 zip 里套了一层版本目录（NMTools-v0.7.0-win-x64/），
+            // 解压后真正的根目录是它。定位到含 program/NMTools.App.exe 的那一层，
+            // 找不到才判定包不完整。
+            var packageRoot = ResolvePackageRoot(root);
+            if (packageRoot is null)
             {
                 _log?.Invoke("extract.missingAppExecutable");
                 return UpdateExtractResult.Failure(UpdateExtractFailureReason.MissingRequiredFile);
             }
 
-            _log?.Invoke($"extract.completed entries={entries.Count}");
-            return UpdateExtractResult.Success(root);
+            _log?.Invoke($"extract.completed entries={entries.Count} root={Path.GetFileName(packageRoot)}");
+            return UpdateExtractResult.Success(packageRoot);
         }
         catch (InvalidDataException)
         {
