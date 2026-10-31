@@ -361,6 +361,8 @@ public sealed class UpdateService : IDisposable
 
     private static string DescribePrepareFailure(PrepareFailureReason reason) => reason switch
     {
+        PrepareFailureReason.ChecksumMismatch =>
+            "下载的更新包校验失败，文件可能不完整或被改动，已删除。请稍后重试。",
         PrepareFailureReason.SizeMismatch =>
             "下载的更新包大小不正确，已删除。请稍后重试。",
         PrepareFailureReason.InvalidArchive =>

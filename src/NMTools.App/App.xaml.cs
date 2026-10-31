@@ -2,6 +2,7 @@ using System.IO;
 using System.Windows;
 using NMTools.App.Infrastructure;
 using NMTools.App.Services;
+using NMTools.Core.Updates;
 
 namespace NMTools.App;
 
@@ -66,10 +67,22 @@ public partial class App : System.Windows.Application
 
         DispatcherUnhandledException += OnDispatcherUnhandledException;
 
+        var appDirectory = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
+
         // 走到这里说明本次启动没有被排期更新接管，启动本身是成功的。
         // 清掉可能残留的待办标记：更新若已由更新器完成，这里就是收尾；
         // 若标记还在但暂存目录已被清理，也在此一并清掉，避免下次启动反复尝试。
-        PendingUpdateStore.Clear(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar));
+        PendingUpdateStore.Clear(appDirectory);
+
+        // 如果刚被更新器替换过，现在能启动到这里就证明新版本可用，
+        // 可以安全删除旧版本备份与暂存目录了。没有标记时该调用立即返回，无副作用。
+        if (!IsUiAutomationMode)
+        {
+            var outcome = UpdateCleanup.RunIfUpdateCompleted(
+                appDirectory,
+                message => _diagnosticLog?.Info("update.cleanup", message));
+            _diagnosticLog?.Info("update.cleanup.outcome", $"result={outcome}");
+        }
 
         _mainWindow = new MainWindow(_diagnosticLog);
         if (_trayIconService is not null)

@@ -137,9 +137,24 @@ public sealed class UpdatePackageDownloader : IUpdatePackageDownloader, IDisposa
                 return DownloadResult.Failure(UpdateDownloadFailureReason.SizeMismatch);
             }
 
-            _log?.Info("update.download.completed", $"bytes={written.Value}");
+            // 发布说明里声明了 SHA-256 就比对。它是可选的：没有声明时只做大小与结构校验，
+            // 不因为发布流程没写哈希就让更新不可用。
+            if (!string.IsNullOrWhiteSpace(manifest.ExpectedSha256))
+            {
+                var actual = ComputeSha256(archivePath);
+                if (!ReleaseNotesChecksum.Matches(manifest.ExpectedSha256, actual))
+                {
+                    TryDelete(archivePath);
+                    _log?.Warn(
+                        "update.download.checksumMismatch",
+                        $"declared={manifest.ExpectedSha256} actual={actual ?? "none"}");
+                    return DownloadResult.Failure(UpdateDownloadFailureReason.ChecksumMismatch);
+                }
 
-            // 大小已与清单声明值一致；内容本身由 zip 结构校验兜底（见解压步骤）。
+                _log?.Info("update.download.checksumOk", "archive matches the checksum in release notes");
+            }
+
+            _log?.Info("update.download.completed", $"bytes={written.Value}");
             return DownloadResult.Success(archivePath);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -211,6 +226,19 @@ public sealed class UpdatePackageDownloader : IUpdatePackageDownloader, IDisposa
         }
 
         return total;
+    }
+
+    private static string? ComputeSha256(string path)
+    {
+        try
+        {
+            using var stream = File.OpenRead(path);
+            return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(stream)).ToLowerInvariant();
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     private static void TryDelete(string path)

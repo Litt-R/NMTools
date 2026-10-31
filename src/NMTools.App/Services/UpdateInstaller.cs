@@ -159,6 +159,7 @@ public sealed class UpdateInstaller : IDisposable
 
     private static PrepareFailureReason MapDownloadFailure(UpdateDownloadFailureReason reason) => reason switch
     {
+        UpdateDownloadFailureReason.ChecksumMismatch => PrepareFailureReason.ChecksumMismatch,
         UpdateDownloadFailureReason.SizeMismatch => PrepareFailureReason.SizeMismatch,
         UpdateDownloadFailureReason.StorageFailure => PrepareFailureReason.StorageFailure,
         UpdateDownloadFailureReason.Canceled => PrepareFailureReason.Canceled,
@@ -212,6 +213,7 @@ public enum PrepareFailureReason
 {
     None,
     NotSupported,
+    ChecksumMismatch,
     SizeMismatch,
     DownloadFailed,
     InvalidArchive,

@@ -53,6 +53,9 @@ public enum UpdateDownloadFailureReason
     /// <summary>下载体积与清单声明不符，或超出上限。</summary>
     SizeMismatch,
 
+    /// <summary>SHA-256 与发布说明声明的不符，说明内容被改动或下载损坏。</summary>
+    ChecksumMismatch,
+
     /// <summary>暂存目录不可写或磁盘空间不足。</summary>
     StorageFailure,
 

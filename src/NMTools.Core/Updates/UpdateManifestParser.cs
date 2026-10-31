@@ -43,19 +43,28 @@ public static class UpdateManifestParser
             }
 
             var notes = ReadString(root, "body") ?? string.Empty;
+
+            // 先提取哈希再截断说明，避免 64 位摘要正好落在截断处而丢掉。
             if (notes.Length > UpdateManifest.MaxNotesLength)
             {
                 notes = notes[..UpdateManifest.MaxNotesLength];
             }
 
-            var (downloadUrl, downloadSize) = FindArchiveAsset(root, version);
+            var (downloadUrl, downloadSize, digest) = FindArchiveAsset(root, version);
+
+            // 优先用 API 的 digest——它由上传时的文件内容算出，不需要人工维护。
+            // 老版本 release 可能没有该字段，此时退回发布说明里手写的哈希。
+            var expectedSha256 = digest ?? ReleaseNotesChecksum.Extract(ReadString(root, "body"));
 
             return new UpdateManifest(
                 version,
                 tagName!,
                 notes,
                 downloadUrl,
-                downloadSize);
+                downloadSize)
+            {
+                ExpectedSha256 = expectedSha256,
+            };
         }
         catch (JsonException)
         {
@@ -67,11 +76,13 @@ public static class UpdateManifestParser
     /// 找到与版本号匹配的便携包资产。只认 browser_download_url，不使用 API URL，
     /// 并要求资产名与发布脚本的命名规则一致，避免把其他产物当成便携包。
     /// </summary>
-    private static (string? Url, long? SizeBytes) FindArchiveAsset(JsonElement root, Version version)
+    private static (string? Url, long? SizeBytes, string? Digest) FindArchiveAsset(
+        JsonElement root,
+        Version version)
     {
         if (!root.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array)
         {
-            return (null, null);
+            return (null, null, null);
         }
 
         var expectedName = UpdateManifest.ExpectedArchiveName(version);
@@ -101,10 +112,35 @@ public static class UpdateManifestParser
                     ? parsedSize
                     : null;
 
-            return (url, size);
+            return (url, size, ReadDigest(asset));
         }
 
-        return (null, null);
+        return (null, null, null);
+    }
+
+    /// <summary>
+    /// 读取资产的 <c>digest</c> 字段，形如 <c>sha256:&lt;64 位十六进制&gt;</c>。
+    /// GitHub 在 2025 年起为此字段提供值，与页面 "Assets" 里显示的一致。
+    /// 只接受 sha256，其他算法或格式一律当作没有。
+    /// </summary>
+    private static string? ReadDigest(JsonElement asset)
+    {
+        var digest = ReadString(asset, "digest");
+        if (string.IsNullOrWhiteSpace(digest))
+        {
+            return null;
+        }
+
+        const string prefix = "sha256:";
+        if (!digest.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var hash = digest[prefix.Length..].Trim();
+        return hash.Length == 64 && hash.All(char.IsAsciiHexDigit)
+            ? hash.ToLowerInvariant()
+            : null;
     }
 
     private static bool ReadBoolean(JsonElement element, string propertyName)

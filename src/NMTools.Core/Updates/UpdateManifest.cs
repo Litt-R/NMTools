@@ -26,6 +26,16 @@ public sealed record UpdateManifest(
     public bool SupportsAutomaticUpdate => DownloadUrl is not null;
 
     /// <summary>
+    /// 发布说明里声明的 SHA-256（如果有）。解析时从 <see cref="Notes"/> 提取，
+    /// 下载完成后用它校验解压前的 zip。
+    ///
+    /// 它不是独立的信任根——说明和包都在同一个 release 里，能改包的人也能改说明。
+    /// 它的价值在于防止传输损坏或 CDN 返回错误内容；真正的保证仍需代码签名。
+    /// 缺失时为 null，此时只做大小与结构校验。
+    /// </summary>
+    public string? ExpectedSha256 { get; init; }
+
+    /// <summary>
     /// 更新说明的最大保留长度。GitHub 的 release body 可能非常长，
     /// 界面只用一个小滚动区域展示，超出部分在解析阶段就截断，避免无谓的内存占用。
     /// </summary>

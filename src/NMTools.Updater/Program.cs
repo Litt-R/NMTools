@@ -20,8 +20,9 @@ internal static class Program
             return 2;
         }
 
-        var logDirectory = Path.GetDirectoryName(options.AppDirectory) ?? AppContext.BaseDirectory;
-        var logger = new UpdaterLog(Path.Combine(logDirectory, LogFileName));
+        // 日志放在 program/logs/，与主程序诊断日志同处，排查时只需要看一个目录。
+        // 主程序退出后目录仍可写；写不进去时 UpdaterLog 静默降级。
+        var logger = new UpdaterLog(UpdaterLog.ResolvePath(options.AppDirectory, LogFileName));
         logger.Write($"start pid={options.ProcessId} app={options.AppDirectory} staging={options.StagedDirectory}");
 
         try
@@ -50,10 +51,11 @@ internal static class Program
                 return 1;
             }
 
-            // 更新成功后清掉下载内容，避免下次误用。
-            // 不删整个暂存根：更新器自身正从 .update-staging/updater/ 里运行，
-            // 删不掉自己的 EXE；那份副本留给下次更新覆盖。
-            TryDeleteDirectory(options.StagedDirectory, logger.Write);
+            // 写下"更新已完成"标记。主程序下次启动成功后据此清理 program.old/ 与暂存目录；
+            // 标记还在却没能正常启动时，备份会保留下来供回滚。
+            // 注意清理不在这里做：此刻新版本还没验证过能否启动，删掉备份就失去回滚机会了。
+            var newVersion = ReadVersion(options.AppDirectory);
+            UpdateCleanup.WriteVerifyMarker(options.AppDirectory, newVersion, logger.Write);
 
             // 重新拉起程序，让用户看到的就是升级后的界面。启动入口优先用 VBS（无控制台窗口）。
             LaunchApp(options.AppDirectory, logger.Write);
@@ -68,6 +70,26 @@ internal static class Program
         finally
         {
             logger.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// 读取新版本 exe 的文件版本，仅用于写进标记便于事后核对。
+    /// 读不到时返回 0.0.0.0 —— 标记的作用只是"有一次更新刚完成"。
+    /// </summary>
+    private static Version ReadVersion(string appDirectory)
+    {
+        try
+        {
+            var exe = Path.Combine(appDirectory, PortableLayout.AppExecutableName);
+            var info = System.Diagnostics.FileVersionInfo.GetVersionInfo(exe);
+            return Version.TryParse(info.FileVersion, out var parsed)
+                ? parsed
+                : new Version(0, 0, 0, 0);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return new Version(0, 0, 0, 0);
         }
     }
 
@@ -215,6 +237,17 @@ public sealed record UpdaterOptions(
 internal sealed class UpdaterLog : IDisposable
 {
     private readonly StreamWriter? _writer;
+
+    /// <summary>
+    /// 解析日志路径：<c>program/logs/updater.log</c>，与主程序诊断日志同目录。
+    /// 目录不可写时由构造函数静默降级。
+    /// </summary>
+    public static string ResolvePath(string appDirectory, string fileName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(appDirectory);
+        ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
+        return Path.Combine(appDirectory, PortableLayout.LogsDirectoryName, fileName);
+    }
 
     public UpdaterLog(string path)
     {

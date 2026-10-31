@@ -16,10 +16,11 @@ namespace NMTools.Core.Updates;
 ///     └── logs/          诊断日志，更新时保留
 /// </code>
 ///
-/// 更新期间额外出现：
+/// 更新期间额外出现（都在包根，与 <c>program/</c> 同级）：
 /// <code>
-/// program/.update-staging/   下载的 zip 与解压结果，成功后清理
-/// program.old/               旧版本备份，新版本启动确认后才删除
+/// .update-staging/    下载的 zip 与解压结果，新版本启动确认后清理
+/// program.old/        旧版本备份，新版本启动确认后清理
+/// .update-verify      更新刚完成的标记，主程序启动成功后据此清理上面两项
 /// </code>
 /// </summary>
 public static class PortableLayout
@@ -51,10 +52,17 @@ public static class PortableLayout
     public const string BackupDirectoryName = "program.old";
 
     /// <summary>
-    /// 更新进行中的标记文件，位于 <c>program/</c> 同级。更新器写入，主程序启动成功后删除；
-    /// 残留说明新版本没能正常启动，下次启动由更新器回滚。
+    /// 「下次启动时更新」的待办标记，位于包根。主程序写入，下次启动由更新器消费。
     /// </summary>
     public const string PendingUpdateMarkerName = ".update-pending";
+
+    /// <summary>
+    /// 「更新已完成，等待确认」标记，位于包根。更新器替换成功后写入，
+    /// 主程序启动成功后据此判定新版本可用，然后清理 <c>program.old/</c> 与暂存目录并删除本标记。
+    ///
+    /// 标记残留而程序没能正常启动时，说明新版本有问题，需要人工回滚。
+    /// </summary>
+    public const string VerifyUpdateMarkerName = ".update-verify";
 
     /// <summary>程序目录（<c>program/</c>）的完整路径。</summary>
     public static string ResolveAppDirectory(string baseDirectory)
@@ -85,6 +93,9 @@ public static class PortableLayout
 
     public static string ResolvePendingUpdateMarker(string appDirectory) =>
         Path.Combine(ResolvePackageRoot(appDirectory), PendingUpdateMarkerName);
+
+    public static string ResolveVerifyUpdateMarker(string appDirectory) =>
+        Path.Combine(ResolvePackageRoot(appDirectory), VerifyUpdateMarkerName);
 
     /// <summary>
     /// 判断某个相对路径是否属于必须保留的用户数据。
