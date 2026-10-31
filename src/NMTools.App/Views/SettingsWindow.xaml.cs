@@ -442,9 +442,10 @@ public partial class SettingsWindow : Window
             return;
         }
 
-        // 检查期间禁用按钮并给出即时反馈；窗口可能在等待期间被关闭，因此结果回写前先确认控件仍可用。
+        // 用按钮自身显示进度，不额外占用一行文字；
+        // 窗口可能在等待期间被关闭，因此结果回写前先确认控件仍可用。
         CheckUpdateButton.IsEnabled = false;
-        UpdateStatusText.Text = "正在检查…";
+        CheckUpdateButton.Content = "检查中…";
         try
         {
             // 以设置窗口为 Owner：它是模态对话框，用主窗口做 Owner 的弹窗会被压在它后面。
@@ -454,8 +455,8 @@ public partial class SettingsWindow : Window
         {
             if (IsLoaded)
             {
+                CheckUpdateButton.Content = "检查更新";
                 CheckUpdateButton.IsEnabled = true;
-                UpdateStatusText.Text = "手动检查随时可用；未勾选下方选项时，启动过程不会联网。";
             }
         }
     }

@@ -344,23 +344,16 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
-                                <TextBlock FontSize="13.5" FontWeight="SemiBold" Foreground="#0F172A" Text="版本检查" />
-                                <TextBlock x:Name="UpdateStatusText"
-                                           AutomationProperties.AutomationId="UpdateStatusText"
-                                           Margin="0,2,0,0"
-                                           FontSize="12"
-                                           LineHeight="18"
-                                           Foreground="#64748B"
-                                           TextWrapping="Wrap"
-                                           Text="手动检查随时可用；未勾选下方选项时，启动过程不会联网。" />
-                            </StackPanel>
+                            <TextBlock VerticalAlignment="Center"
+                                       FontSize="13.5"
+                                       FontWeight="SemiBold"
+                                       Foreground="#0F172A"
+                                       Text="版本检查" />
                             <Button x:Name="CheckUpdateButton"
                                     AutomationProperties.AutomationId="CheckUpdateButton"
                                     Grid.Column="1"
                                     Click="OnCheckUpdateClick"
                                     VerticalAlignment="Center"
-                                    ToolTip="立即向 GitHub Releases 查询是否有新版本"
                                     Style="{StaticResource ModernSecondaryButtonStyle}"
                                     Height="30"
                                     Padding="12,0"
@@ -371,7 +364,7 @@
                                   Margin="0,12,0,0"
                                   HorizontalAlignment="Left"
                                   Content="启动时自动检查更新"
-                                  ToolTip="每次启动在后台异步检查一次。发现新版本后会询问，下载和安装都需要你确认"
+                                  ToolTip="每次启动在后台检查一次"
                                   Style="{StaticResource ModernChipCheckBoxStyle}" />
                     </StackPanel>
                 </Border>
