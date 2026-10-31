@@ -35,6 +35,12 @@ public sealed class UpdateService : IDisposable
     private int _checking;
     private int _installing;
 
+    /// <summary>
+    /// prepare 阶段返回的真实解压根目录（可能带版本子目录），供应用阶段使用。
+    /// 为空说明还没准备成功，此时不应进入应用步骤。
+    /// </summary>
+    private string? _preparedContentDirectory;
+
     /// <param name="promptForUpdate">
     /// 展示"发现新版本"对话框并返回用户是否要下载。为 null 时使用真实对话框；
     /// 测试通过注入它避免在非 UI 线程上弹窗。
@@ -219,9 +225,12 @@ public sealed class UpdateService : IDisposable
             _ => InstallChoice.None,
         };
 
+        // 用 prepare 阶段返回的真实解压路径，不要自己拼 <staging>/content：
+        // 发布包在 zip 里套了一层版本目录，解压根是 content/NMTools-v0.7.0-win-x64，
+        // 自己拼出来的路径会让更新器找不到 program/，报"更新包不完整"。
         if (choice is InstallChoice.RestartNow or InstallChoice.NextStartup)
         {
-            ApplyInstallChoice(choice, manifest);
+            ApplyInstallChoice(choice, manifest, _preparedContentDirectory);
         }
 
         // 取消时下载器已通过 dialog.CancellationToken 收到信号，不需要额外处理。
@@ -251,6 +260,8 @@ public sealed class UpdateService : IDisposable
                 return;
             }
 
+            // 记住真实解压根目录，供后续「立即更新 / 下次启动」使用。
+            _preparedContentDirectory = prepared.ContentDirectory;
             dialog.ShowReady();
         }
         catch (Exception exception)
@@ -269,35 +280,53 @@ public sealed class UpdateService : IDisposable
     /// </summary>
     /// <param name="choice">用户选择。</param>
     /// <param name="manifest">当前更新清单。</param>
-    public void ApplyInstallChoice(InstallChoice choice, UpdateManifest manifest)
+    /// <param name="contentDirectory">
+    /// prepare 阶段返回的真实解压根目录。为空时说明准备未完成，拒绝应用。
+    /// </param>
+    public void ApplyInstallChoice(
+        InstallChoice choice,
+        UpdateManifest manifest,
+        string? contentDirectory = null)
     {
         ArgumentNullException.ThrowIfNull(manifest);
+
+        if (choice is not (InstallChoice.RestartNow or InstallChoice.NextStartup))
+        {
+            // 取消或失败：暂存目录留给下次，不清也不应用。
+            return;
+        }
+
+        var content = contentDirectory ?? _preparedContentDirectory;
+        if (string.IsNullOrWhiteSpace(content) || !Directory.Exists(content))
+        {
+            // 没有可用的解压结果就绝不能进入替换步骤，否则会做出一个不完整的新版本。
+            _log?.Warn("update.apply.noContent", "prepared content directory is missing");
+            _showAlert(
+                "更新内容已失效，请重新检查更新。当前版本可以继续使用。",
+                "NMTools - 更新失败",
+                true,
+                _ownerAccessor());
+            return;
+        }
 
         switch (choice)
         {
             case InstallChoice.RestartNow:
-                StartUpdaterAndExit(manifest);
+                StartUpdaterAndExit(manifest, content);
                 break;
             case InstallChoice.NextStartup:
-                ScheduleForNextStartup(manifest);
-                break;
-            default:
-                // 取消或失败：暂存目录留给下次，不清也不应用。
+                ScheduleForNextStartup(manifest, content);
                 break;
         }
     }
 
-    private void StartUpdaterAndExit(UpdateManifest manifest)
+    private void StartUpdaterAndExit(UpdateManifest manifest, string contentDirectory)
     {
-        var contentDirectory = Path.Combine(
-            PortableLayout.ResolveStagingDirectory(_appDirectory),
-            "content");
-
         var updaterPid = _installer.LaunchUpdater(_appDirectory, contentDirectory);
         if (updaterPid is null)
         {
             _showAlert(
-                "无法启动更新程序，请手动下载新版本替换。当前版本可以继续使用。",
+                "无法启动更新程序，请稍后重试。当前版本可以继续使用。",
                 "NMTools - 更新失败",
                 true,
                 _ownerAccessor());
@@ -308,12 +337,8 @@ public sealed class UpdateService : IDisposable
         UpdateReadyToApply?.Invoke(this, updaterPid.Value);
     }
 
-    private void ScheduleForNextStartup(UpdateManifest manifest)
+    private void ScheduleForNextStartup(UpdateManifest manifest, string contentDirectory)
     {
-        var contentDirectory = Path.Combine(
-            PortableLayout.ResolveStagingDirectory(_appDirectory),
-            "content");
-
         var saved = _installer.ScheduleForNextStartup(_appDirectory, contentDirectory, manifest.Version);
         if (!saved)
         {

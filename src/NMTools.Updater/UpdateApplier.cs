@@ -151,20 +151,51 @@ public sealed class UpdateApplier
     /// <summary>
     /// 解压结果可能是「包根目录（含 program/）」或「program/ 本身」，两种都接受。
     /// </summary>
+    /// <summary>
+    /// 找出解压结果里的 <c>program/</c> 目录。
+    ///
+    /// 发布包在 zip 里套了一层版本目录，解压根可能是「包根（含 program/）」，
+    /// 也可能因为调用方传错层级而差一层。这里同时接受两种，并向下最多找一层，
+    /// 避免因为路径层级不一致就判定"包不完整"。
+    /// </summary>
     private static string? ResolveNewProgramDirectory(string extractedRoot)
     {
-        var nested = Path.Combine(extractedRoot, PortableLayout.AppDirectoryName);
+        var direct = TryResolveAt(extractedRoot);
+        if (direct is not null)
+        {
+            return direct;
+        }
+
+        // 差一层时（例如传进来的是 staging/content 而实际包根在它的子目录里）向下找。
+        try
+        {
+            foreach (var child in Directory.EnumerateDirectories(extractedRoot))
+            {
+                var resolved = TryResolveAt(child);
+                if (resolved is not null)
+                {
+                    return resolved;
+                }
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+
+        return null;
+    }
+
+    private static string? TryResolveAt(string root)
+    {
+        var nested = Path.Combine(root, PortableLayout.AppDirectoryName);
         if (File.Exists(Path.Combine(nested, PortableLayout.AppExecutableName)))
         {
             return nested;
         }
 
-        if (File.Exists(Path.Combine(extractedRoot, PortableLayout.AppExecutableName)))
-        {
-            return extractedRoot;
-        }
-
-        return null;
+        // 解压结果本身就是 program/ 的内容。
+        return File.Exists(Path.Combine(root, PortableLayout.AppExecutableName)) ? root : null;
     }
 
     private void RestorePreservedData(string backupDirectory, string targetAppDirectory)

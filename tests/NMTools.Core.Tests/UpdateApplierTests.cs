@@ -139,6 +139,47 @@ public sealed class UpdateApplierTests : IDisposable
     }
 
     [Fact]
+    public void Apply_FindsProgramDirectoryOneLevelDown()
+    {
+        // 真实链路：解压器返回的是「包根」（内含 program/），但如果调用方多包了一层，
+        // 也要能找下去，否则会误判成"更新包不完整"。
+        var package = CreatePackageRoot("v1");
+        var app = CreateAppDirectory(package, "v1");
+        var outer = Path.Combine(_root, "outer-" + Guid.NewGuid().ToString("N"));
+        var versionDir = Path.Combine(outer, "NMTools-v0.7.0-win-x64");
+        var innerProgram = Path.Combine(versionDir, "program");
+        Directory.CreateDirectory(innerProgram);
+        File.WriteAllText(Path.Combine(innerProgram, "NMTools.App.exe"), "v2");
+        File.WriteAllText(Path.Combine(innerProgram, "version.txt"), "v2");
+
+        var result = new UpdateApplier(_ => { }).Apply(ExitedProcessId(), app, outer);
+
+        Assert.True(result.IsSuccess, $"更新失败：{result.FailureReason}");
+        Assert.Equal("v2", File.ReadAllText(Path.Combine(app, "version.txt")));
+    }
+
+    [Fact]
+    public void Apply_AcceptsVersionDirectoryAsExtractedRoot()
+    {
+        // 这正是修好后的真实调用形状：content/NMTools-v0.7.0-win-x64
+        var package = CreatePackageRoot("v1");
+        var app = CreateAppDirectory(package, "v1");
+        var versionDir = Path.Combine(_root, "content-" + Guid.NewGuid().ToString("N"), "NMTools-v0.7.0-win-x64");
+        var innerProgram = Path.Combine(versionDir, "program");
+        Directory.CreateDirectory(innerProgram);
+        File.WriteAllText(Path.Combine(innerProgram, "NMTools.App.exe"), "v2");
+        File.WriteAllText(Path.Combine(innerProgram, "version.txt"), "v2");
+        File.WriteAllText(Path.Combine(app, "data", "input-bridge-settings.json"), "{\"k\":1}");
+
+        var result = new UpdateApplier(_ => { }).Apply(ExitedProcessId(), app, versionDir);
+
+        Assert.True(result.IsSuccess, $"更新失败：{result.FailureReason}");
+        Assert.Equal("v2", File.ReadAllText(Path.Combine(app, "version.txt")));
+        // 用户设置仍然保留。
+        Assert.Equal("{\"k\":1}", File.ReadAllText(Path.Combine(app, "data", "input-bridge-settings.json")));
+    }
+
+    [Fact]
     public void Apply_AcceptsStagedDirectoryThatIsProgramItself()
     {
         // 解压结果可能是「包根目录/program」或「program 内容本身」两种形状。
