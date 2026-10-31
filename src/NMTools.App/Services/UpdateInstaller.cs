@@ -17,19 +17,16 @@ public sealed class UpdateInstaller : IDisposable
     private readonly UpdatePackageDownloader _downloader;
     private readonly UpdatePackageExtractor _extractor;
     private readonly IDiagnosticLog? _log;
-    private readonly HttpClient _checksumClient;
 
     public UpdateInstaller(IDiagnosticLog? log = null, HttpMessageHandler? handler = null)
     {
         _log = log;
         _downloader = new UpdatePackageDownloader(log, handler);
         _extractor = new UpdatePackageExtractor(message => log?.Info("update.extract", message));
-        _checksumClient = handler is null ? new HttpClient() : new HttpClient(handler, disposeHandler: true);
-        _checksumClient.Timeout = TimeSpan.FromSeconds(30);
     }
 
     /// <summary>
-    /// 下载、校验并解压更新包到暂存目录。
+    /// 下载并解压更新包到暂存目录。
     /// </summary>
     public async Task<PrepareResult> PrepareAsync(
         UpdateManifest manifest,
@@ -42,24 +39,15 @@ public sealed class UpdateInstaller : IDisposable
 
         if (!manifest.SupportsAutomaticUpdate)
         {
-            // 没有校验文件的发布不提供自动更新，调用方应退回打开浏览器。
+            // 没有匹配的便携包资产，调用方应退回打开浏览器。
             return PrepareResult.Failure(PrepareFailureReason.NotSupported);
         }
 
-        // 1. 取校验文件。清单本身来自 API，校验值来自独立资产，
-        //    两者都不依赖下载时的 TLS 会话，能发现下载内容被替换。
-        var expected = await FetchExpectedChecksumAsync(manifest, cancellationToken).ConfigureAwait(false);
-        if (expected is null)
-        {
-            return PrepareResult.Failure(PrepareFailureReason.ChecksumUnavailable);
-        }
-
-        var manifestWithChecksum = manifest.WithExpectedChecksum(expected);
         var stagingDirectory = PortableLayout.ResolveStagingDirectory(appDirectory);
 
-        // 2. 下载。
+        // 下载。大小在下载器内部对照清单声明值校验。
         var download = await _downloader
-            .DownloadAsync(manifestWithChecksum, stagingDirectory, progress, cancellationToken)
+            .DownloadAsync(manifest, stagingDirectory, progress, cancellationToken)
             .ConfigureAwait(false);
 
         if (!download.IsSuccess)
@@ -67,17 +55,8 @@ public sealed class UpdateInstaller : IDisposable
             return PrepareResult.Failure(MapDownloadFailure(download.FailureReason));
         }
 
-        // 3. 比对哈希。不一致说明内容被替换或下载损坏，绝不继续。
-        if (!ChecksumManifest.Matches(expected, download.ActualChecksum))
-        {
-            _log?.Warn("update.verify.checksumMismatch", "downloaded archive does not match published checksum");
-            TryDeleteFile(download.ArchivePath!);
-            return PrepareResult.Failure(PrepareFailureReason.ChecksumMismatch);
-        }
-
-        _log?.Info("update.verify.checksumOk", "archive checksum matches published value");
-
-        // 4. 解压。目录结构为 <staging>/content。
+        // 解压。zip 结构损坏、条目越界、缺少主程序都会在这一步被发现；
+        // 目录结构为 <staging>/content。
         var contentDirectory = Path.Combine(stagingDirectory, "content");
         var extract = _extractor.Extract(download.ArchivePath!, contentDirectory);
         if (!extract.IsSuccess)
@@ -168,38 +147,8 @@ public sealed class UpdateInstaller : IDisposable
         }
     }
 
-    private async Task<string?> FetchExpectedChecksumAsync(
-        UpdateManifest manifest,
-        CancellationToken cancellationToken)
-    {
-        if (manifest.ChecksumUrl is null || !UpdateSource.IsTrustedReleaseUrl(manifest.ChecksumUrl))
-        {
-            return null;
-        }
-
-        try
-        {
-            var text = await _checksumClient
-                .GetStringAsync(new Uri(manifest.ChecksumUrl), cancellationToken)
-                .ConfigureAwait(false);
-
-            var manifestEntries = ChecksumManifest.Parse(text);
-            var archiveName = Path.GetFileName(new Uri(manifest.DownloadUrl!).AbsolutePath);
-            return ChecksumManifest.FindChecksum(manifestEntries, archiveName);
-        }
-        catch (Exception exception) when (
-            exception is HttpRequestException
-                or TaskCanceledException
-                or IOException)
-        {
-            _log?.Warn("update.verify.checksumFetchFailed", $"ex={exception.GetType().Name}");
-            return null;
-        }
-    }
-
     private static PrepareFailureReason MapDownloadFailure(UpdateDownloadFailureReason reason) => reason switch
     {
-        UpdateDownloadFailureReason.ChecksumMismatch => PrepareFailureReason.ChecksumMismatch,
         UpdateDownloadFailureReason.SizeMismatch => PrepareFailureReason.SizeMismatch,
         UpdateDownloadFailureReason.StorageFailure => PrepareFailureReason.StorageFailure,
         UpdateDownloadFailureReason.Canceled => PrepareFailureReason.Canceled,
@@ -246,7 +195,6 @@ public sealed class UpdateInstaller : IDisposable
     public void Dispose()
     {
         _downloader.Dispose();
-        _checksumClient.Dispose();
     }
 }
 
@@ -254,8 +202,6 @@ public enum PrepareFailureReason
 {
     None,
     NotSupported,
-    ChecksumUnavailable,
-    ChecksumMismatch,
     SizeMismatch,
     DownloadFailed,
     InvalidArchive,

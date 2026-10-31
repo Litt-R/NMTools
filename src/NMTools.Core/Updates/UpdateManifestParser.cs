@@ -49,7 +49,6 @@ public static class UpdateManifestParser
             }
 
             var (downloadUrl, downloadSize) = FindArchiveAsset(root, version);
-            var checksumUrl = FindChecksumAsset(root);
             var releasePageUrl = ResolveReleasePageUrl(root, tagName!);
 
             return new UpdateManifest(
@@ -58,8 +57,7 @@ public static class UpdateManifestParser
                 notes,
                 downloadUrl,
                 downloadSize,
-                releasePageUrl,
-                checksumUrl);
+                releasePageUrl);
         }
         catch (JsonException)
         {
@@ -114,33 +112,6 @@ public static class UpdateManifestParser
     /// <summary>
     /// 找到校验文件资产。<c>SHA256SUMS.txt</c> 是发布脚本固定产出的名字。
     /// </summary>
-    private static string? FindChecksumAsset(JsonElement root)
-    {
-        if (!root.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array)
-        {
-            return null;
-        }
-
-        foreach (var asset in assets.EnumerateArray())
-        {
-            if (asset.ValueKind != JsonValueKind.Object)
-            {
-                continue;
-            }
-
-            var name = ReadString(asset, "name");
-            if (!string.Equals(name, ChecksumManifest.AssetName, StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            var url = ReadString(asset, "browser_download_url");
-            return UpdateSource.IsTrustedReleaseUrl(url) ? url : null;
-        }
-
-        return null;
-    }
-
     private static string ResolveReleasePageUrl(JsonElement root, string tagName)
     {
         var htmlUrl = ReadString(root, "html_url");

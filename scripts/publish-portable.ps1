@@ -211,18 +211,6 @@ if (Test-Path $finalArchive) {
 Compress-Archive -LiteralPath $archiveRoot -DestinationPath $finalArchive -CompressionLevel Optimal
 Remove-Item -LiteralPath $stagingForArchive -Recurse -Force
 
-# ---------------------------------------------------------------------------
-# 生成校验文件 SHA256SUMS.txt。
-#
-# 客户端下载 zip 后用它比对内容哈希。它和 zip 一起作为 Release 的两个资产，
-# 客户端分别下载再比对，因此能发现"下载内容被替换"，而不只是"下载损坏"。
-# 这个文件不入包，只作为独立资产上传。
-# ---------------------------------------------------------------------------
-$archiveHash = (Get-FileHash -LiteralPath $finalArchive -Algorithm SHA256).Hash.ToLowerInvariant()
-$checksumFile = Join-Path $publishDirectory 'SHA256SUMS.txt'
-Set-Content -LiteralPath $checksumFile -Value "$archiveHash  $archiveName" -Encoding ascii
-Write-Host "已生成校验文件：$checksumFile" -ForegroundColor Yellow
-
 $archiveSize = [math]::Round((Get-Item $finalArchive).Length / 1MB, 1)
 
 Write-Output "Published: $publishRoot"

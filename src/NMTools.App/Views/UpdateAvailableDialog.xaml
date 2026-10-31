@@ -48,13 +48,6 @@
                                Text="发现新版本" />
                 </StackPanel>
 
-                <TextBlock FontSize="12"
-                           Foreground="#64748B"
-                           LineHeight="18"
-                           TextWrapping="Wrap"
-                           Margin="0,0,0,6"
-                           Text="下面是这次发布的更新说明。选择「下载并更新」会在浏览器中打开该版本的 GitHub 页面，由你下载并替换整个便携文件夹；NMTools 不会自动覆盖正在运行的程序。" />
-
                 <Border Margin="0,4,0,0"
                         Background="#F8FAFC"
                         BorderBrush="#E2E8F0"

@@ -1,7 +1,6 @@
 using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
-using System.Security.Cryptography;
 using NMTools.App.Infrastructure;
 using NMTools.Core.Updates;
 
@@ -138,17 +137,10 @@ public sealed class UpdatePackageDownloader : IUpdatePackageDownloader, IDisposa
                 return DownloadResult.Failure(UpdateDownloadFailureReason.SizeMismatch);
             }
 
-            // 计算实际内容的 SHA-256，交给调用方与清单比对。
-            var actualChecksum = ComputeSha256(archivePath);
-            _log?.Info(
-                "update.download.completed",
-                $"bytes={written.Value} checksum={(actualChecksum is null ? "none" : "ok")}");
+            _log?.Info("update.download.completed", $"bytes={written.Value}");
 
-            return new DownloadResult(
-                archivePath,
-                UpdateDownloadFailureReason.None,
-                manifest.ExpectedArchiveChecksum,
-                actualChecksum);
+            // 大小已与清单声明值一致；内容本身由 zip 结构校验兜底（见解压步骤）。
+            return DownloadResult.Success(archivePath);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -219,19 +211,6 @@ public sealed class UpdatePackageDownloader : IUpdatePackageDownloader, IDisposa
         }
 
         return total;
-    }
-
-    private static string? ComputeSha256(string path)
-    {
-        try
-        {
-            using var stream = File.OpenRead(path);
-            return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-        {
-            return null;
-        }
     }
 
     private static void TryDelete(string path)

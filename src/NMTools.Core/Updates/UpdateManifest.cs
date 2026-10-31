@@ -10,31 +10,22 @@ namespace NMTools.Core.Updates;
 /// <param name="DownloadUrl">与发布包同名的 zip 资产地址；没有匹配资产时为 null。</param>
 /// <param name="DownloadSizeBytes">zip 资产大小；未知时为 null。</param>
 /// <param name="ReleasePageUrl">该版本的 GitHub Release 页面，用于「下载并更新」。</param>
-/// <param name="ChecksumUrl">校验文件（<c>SHA256SUMS.txt</c>）的资产地址；没有时为 null。</param>
 public sealed record UpdateManifest(
     Version Version,
     string TagName,
     string Notes,
     string? DownloadUrl,
     long? DownloadSizeBytes,
-    string ReleasePageUrl,
-    string? ChecksumUrl = null)
+    string ReleasePageUrl)
 {
     /// <summary>
-    /// 下载包期望的 SHA-256。由下载流程在取得校验文件后填入，
-    /// 不来自 API 响应本身——清单文件才是校验值的来源。
+    /// 是否具备自动更新的条件：清单里有发布包资产。
+    ///
+    /// 完整性依赖 GitHub 账号与 HTTPS，下载后校验声明大小并确认 zip 结构可解。
+    /// 不引入独立的校验文件：它与包同源存放，无法抵御同时篡改两者的攻击，
+    /// 却让发布流程多一个容易漏传的环节。真正的保证应由代码签名提供（见 ADR 0005）。
     /// </summary>
-    public string? ExpectedArchiveChecksum { get; init; }
-
-    /// <summary>
-    /// 是否具备自动更新的完整条件：有下载地址和校验文件。
-    /// 缺少任一条件时只能退回到"打开浏览器手动下载"。
-    /// </summary>
-    public bool SupportsAutomaticUpdate =>
-        DownloadUrl is not null && ChecksumUrl is not null;
-
-    public UpdateManifest WithExpectedChecksum(string? checksum) =>
-        this with { ExpectedArchiveChecksum = checksum };
+    public bool SupportsAutomaticUpdate => DownloadUrl is not null;
 
     /// <summary>
     /// 更新说明的最大保留长度。GitHub 的 release body 可能非常长，

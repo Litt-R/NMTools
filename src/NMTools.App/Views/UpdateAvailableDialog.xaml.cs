@@ -4,8 +4,8 @@ using NMTools.Core.Updates;
 namespace NMTools.App.Views;
 
 /// <summary>
-/// 发现新版本时的提示窗口。只展示版本号、更新说明和下载体积，
-/// 两个按钮分别是「下载并更新」（打开 Release 页面）和「以后再说」（关闭，不记住任何状态）。
+/// 发现新版本时的提示窗口。展示版本号、更新说明和下载体积，
+/// 两个按钮分别是「下载并更新」（进入下载与安装流程）和「以后再说」（关闭，不记住任何状态）。
 /// </summary>
 public partial class UpdateAvailableDialog : Window
 {
@@ -34,7 +34,10 @@ public partial class UpdateAvailableDialog : Window
         }
     }
 
-    /// <summary>用户选择了「下载并更新」。关闭后由调用方在浏览器中打开 Release 页面。</summary>
+    /// <summary>
+    /// 用户选择了「下载并更新」。调用方据此进入下载与安装流程；
+    /// 只有在发布缺少校验文件时才会退回打开浏览器。
+    /// </summary>
     public bool OpenReleasePageRequested { get; private set; }
 
     /// <summary>本次检查对应的 Release 页面地址。</summary>

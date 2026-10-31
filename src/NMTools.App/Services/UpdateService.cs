@@ -171,9 +171,8 @@ public sealed class UpdateService : IDisposable
 
         if (!manifest.SupportsAutomaticUpdate)
         {
-            // 该版本没有提供校验文件，无法安全地自动下载。退回打开浏览器，
-            // 而不是在没有完整性校验的情况下执行下载的字节。
-            _log?.Warn("update.install.notSupported", "release has no checksum asset");
+            // 该版本没有可用的便携包资产（例如上传了错误的文件名），无法自动下载。
+            _log?.Warn("update.install.notSupported", "release has no matching archive asset");
             OpenReleasePage(manifest.ReleasePageUrl, owner);
             return;
         }
@@ -359,10 +358,6 @@ public sealed class UpdateService : IDisposable
 
     private static string DescribePrepareFailure(PrepareFailureReason reason) => reason switch
     {
-        PrepareFailureReason.ChecksumMismatch =>
-            "下载的更新包校验失败，文件可能不完整或被改动，已删除。请稍后重试。",
-        PrepareFailureReason.ChecksumUnavailable =>
-            "无法获取更新包的校验信息，已取消更新。请稍后重试。",
         PrepareFailureReason.SizeMismatch =>
             "下载的更新包大小不正确，已删除。请稍后重试。",
         PrepareFailureReason.InvalidArchive =>

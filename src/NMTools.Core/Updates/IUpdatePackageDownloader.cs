@@ -22,20 +22,16 @@ public interface IUpdatePackageDownloader
         CancellationToken cancellationToken = default);
 }
 
-/// <param name="ArchivePath">校验通过后的 zip 路径；失败时为 null。</param>
+/// <param name="ArchivePath">下载完成的 zip 路径；失败时为 null。</param>
 /// <param name="FailureReason">失败原因分类。</param>
-/// <param name="ExpectedChecksum">清单声明的 SHA-256；缺失时为 null。</param>
-/// <param name="ActualChecksum">实际下载内容的 SHA-256；失败时可能为 null。</param>
 public sealed record DownloadResult(
     string? ArchivePath,
-    UpdateDownloadFailureReason FailureReason,
-    string? ExpectedChecksum = null,
-    string? ActualChecksum = null)
+    UpdateDownloadFailureReason FailureReason)
 {
     public bool IsSuccess => ArchivePath is not null && FailureReason == UpdateDownloadFailureReason.None;
 
-    public static DownloadResult Success(string archivePath, string? checksum = null) =>
-        new(archivePath, UpdateDownloadFailureReason.None, checksum, checksum);
+    public static DownloadResult Success(string archivePath) =>
+        new(archivePath, UpdateDownloadFailureReason.None);
 
     public static DownloadResult Failure(UpdateDownloadFailureReason reason) =>
         new(null, reason);
@@ -56,9 +52,6 @@ public enum UpdateDownloadFailureReason
 
     /// <summary>下载体积与清单声明不符，或超出上限。</summary>
     SizeMismatch,
-
-    /// <summary>SHA-256 与清单声明不符，说明内容被篡改或下载损坏。</summary>
-    ChecksumMismatch,
 
     /// <summary>暂存目录不可写或磁盘空间不足。</summary>
     StorageFailure,
