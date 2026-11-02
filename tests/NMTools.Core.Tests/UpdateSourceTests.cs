@@ -38,24 +38,75 @@ public sealed class UpdateSourceTests
     }
 
     [Fact]
-    public void LatestReleaseApiUrl_PointsAtConfiguredRepository()
+    public void Endpoints_PointAtGithubWebHostNotApi()
     {
+        // ADR 0006：不再访问 api.github.com——匿名配额会被共用出口 IP 打满。
         Assert.Equal(
-            "https://api.github.com/repos/Litt-R/NMTools/releases/latest",
-            UpdateSource.LatestReleaseApiUrl);
+            "https://github.com/Litt-R/NMTools/releases/latest",
+            UpdateSource.LatestReleaseRedirectUrl);
+        Assert.Equal(
+            "https://github.com/Litt-R/NMTools/releases.atom",
+            UpdateSource.ReleasesAtomUrl);
+        Assert.DoesNotContain(
+            "api.github.com",
+            UpdateSource.LatestReleaseRedirectUrl + UpdateSource.ReleasesAtomUrl,
+            StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public void UpdateSource_ExposesOnlyTheApiEndpoint()
+    public void ExpandedAssetsUrl_UsesTagPath()
     {
-        // 没有面向用户的页面地址——程序不打开外部链接。
-        var properties = typeof(UpdateSource)
-            .GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
-            .Select(property => property.Name)
-            .ToArray();
+        Assert.Equal(
+            "https://github.com/Litt-R/NMTools/releases/expanded_assets/v0.7.0",
+            UpdateSource.ExpandedAssetsUrl("v0.7.0"));
+    }
 
-        Assert.DoesNotContain(properties, name =>
-            name.Contains("Page", StringComparison.Ordinal)
-            || name.Contains("Releases", StringComparison.Ordinal));
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(null)]
+    public void ExpandedAssetsUrl_RejectsEmptyTag(string? tag)
+    {
+        Assert.ThrowsAny<ArgumentException>(() => UpdateSource.ExpandedAssetsUrl(tag!));
+    }
+
+    [Fact]
+    public void ReleaseDownloadUrl_MatchesPublishScriptNaming()
+    {
+        // 下载地址由 tag 推导，不再取自响应正文（ADR 0006）。
+        Assert.Equal(
+            "https://github.com/Litt-R/NMTools/releases/download/v0.7.0/NMTools-v0.7.0-win-x64.zip",
+            UpdateSource.ReleaseDownloadUrl("v0.7.0"));
+    }
+
+    [Theory]
+    [InlineData("v0.7.0-beta.1")]
+    [InlineData("nightly")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void ReleaseDownloadUrl_RejectsNonStableTag(string? tag)
+    {
+        Assert.ThrowsAny<ArgumentException>(() => UpdateSource.ReleaseDownloadUrl(tag!));
+    }
+
+    [Theory]
+    [InlineData("https://github.com/Litt-R/NMTools/releases/tag/v0.7.0", "v0.7.0")]
+    [InlineData("https://github.com/Litt-R/NMTools/releases/tag/v0.7.0/", "v0.7.0")]
+    [InlineData("https://github.com/litt-r/nmtools/releases/tag/v0.7.0", "v0.7.0")]
+    public void TryExtractTagFromReleaseUrl_ReadsTagFromLink(string url, string expected)
+    {
+        Assert.Equal(expected, UpdateSource.TryExtractTagFromReleaseUrl(url));
+    }
+
+    [Theory]
+    [InlineData("https://github.com/Litt-R/NMTools/releases")]           // 没有 tag 段
+    [InlineData("https://github.com/Litt-R/NMTools/releases/download/v0.7.0/x.zip")] // 不是 tag 路径
+    [InlineData("https://evil.example.com/Litt-R/NMTools/releases/tag/v0.7.0")]
+    [InlineData("https://github.com/Other/Repo/releases/tag/v0.7.0")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void TryExtractTagFromReleaseUrl_RejectsForeignUrls(string? url)
+    {
+        Assert.Null(UpdateSource.TryExtractTagFromReleaseUrl(url));
     }
 }

@@ -26,7 +26,7 @@ public sealed class UpdateChecker
         ReleaseFeedResponse response;
         try
         {
-            response = await _feed.GetLatestReleaseJsonAsync(cancellationToken).ConfigureAwait(false);
+            response = await _feed.GetLatestReleaseAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -44,7 +44,7 @@ public sealed class UpdateChecker
             return UpdateCheckResult.Failed(response.FailureReason, response.HttpStatusCode);
         }
 
-        var manifest = UpdateManifestParser.Parse(response.Json);
+        var manifest = UpdateManifestComposer.Compose(response.Documents);
         if (manifest is null)
         {
             return UpdateCheckResult.Failed(UpdateCheckFailureReason.InvalidResponse);
