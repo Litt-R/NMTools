@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using NMTools.App.Infrastructure;
+using NMTools.App.Interop;
 using NMTools.Core;
 
 namespace NMTools.App.Services;
@@ -16,8 +17,14 @@ public sealed class InputBridgeCoordinator
     private const int ClipboardVerificationDelayMilliseconds = 100;
     private const string TargetUnavailableMessage = "目标 NoMachine 窗口已不可用，文字已保留在剪贴板中。";
 
+    private static int _nextRunId;
+
     private readonly PasteMethod _pasteMethod;
     private readonly RemoteInput? _customInput;
+    private readonly Func<uint> _clipboardSequence;
+    private readonly Func<string?> _clipboardContentOwner;
+    private readonly int _runId = Interlocked.Increment(ref _nextRunId);
+    private readonly List<string> _changedStages = [];
 
     public InputBridgeCoordinator(
         ITargetWindowService targetWindowService,
@@ -26,8 +33,12 @@ public sealed class InputBridgeCoordinator
         InputBridgeOptions options,
         Func<string?> requestText,
         PasteShortcutAction? pasteAction = null,
-        IDiagnosticLog? log = null)
+        IDiagnosticLog? log = null,
+        Func<uint>? clipboardSequence = null,
+        Func<string?>? clipboardContentOwner = null)
     {
+        _clipboardSequence = clipboardSequence ?? ClipboardDiagnostics.GetSequenceNumber;
+        _clipboardContentOwner = clipboardContentOwner ?? ClipboardDiagnostics.DescribeClipboardContentOwner;
         _targetWindowService = targetWindowService ?? throw new ArgumentNullException(nameof(targetWindowService));
         _clipboardService = clipboardService ?? throw new ArgumentNullException(nameof(clipboardService));
         _textInjectionService = textInjectionService ?? throw new ArgumentNullException(nameof(textInjectionService));
@@ -41,6 +52,11 @@ public sealed class InputBridgeCoordinator
 
     public event EventHandler<string>? OperationFailed;
 
+    /// <summary>
+    /// 触发来源，仅用于日志区分：submit（气泡提交）或 retry（重试快捷键）。
+    /// </summary>
+    public string Trigger { get; init; } = "submit";
+
     private static bool RequiresTarget(PasteMethod method)
     {
         return method is not PasteMethod.None and not PasteMethod.ClipboardOnly;
@@ -53,11 +69,15 @@ public sealed class InputBridgeCoordinator
         var stopwatch = Stopwatch.StartNew();
         _log?.Info(
             "bridge.run.start",
-            $"method={_pasteMethod} target={DescribeTarget(target)}");
+            $"run={_runId} trigger={Trigger} method={_pasteMethod} target={DescribeTarget(target)}");
         try
         {
             await RunCoreAsync(target, cancellationToken);
-            _log?.Info("bridge.run.completed", $"method={_pasteMethod} elapsedMs={stopwatch.ElapsedMilliseconds}");
+
+            // 本机发完按键即视为完成；NoMachine 没有回执，远端是否真的粘上无从得知。
+            _log?.Info(
+                "bridge.run.completed",
+                $"run={_runId} method={_pasteMethod} elapsedMs={stopwatch.ElapsedMilliseconds} remoteConfirmed=false");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -79,11 +99,15 @@ public sealed class InputBridgeCoordinator
         ArgumentNullException.ThrowIfNull(target);
 
         var stopwatch = Stopwatch.StartNew();
-        _log?.Info("bridge.retry.start", $"method={_pasteMethod} target={DescribeTarget(target)}");
+        _log?.Info(
+            "bridge.retry.start",
+            $"run={_runId} trigger=retry method={_pasteMethod} target={DescribeTarget(target)}");
         try
         {
             await RetryPasteCoreAsync(target, cancellationToken);
-            _log?.Info("bridge.retry.completed", $"method={_pasteMethod} elapsedMs={stopwatch.ElapsedMilliseconds}");
+            _log?.Info(
+                "bridge.retry.completed",
+                $"run={_runId} method={_pasteMethod} elapsedMs={stopwatch.ElapsedMilliseconds} remoteConfirmed=false");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -117,12 +141,14 @@ public sealed class InputBridgeCoordinator
 
         if (!_targetWindowService.IsValidTarget(target, _options))
         {
+            _log?.Warn("bridge.retry.targetInvalid", $"run={_runId} {DescribeTarget(target)}");
             OperationFailed?.Invoke(this, TargetUnavailableMessage);
             return;
         }
 
         if (!await _targetWindowService.TryActivateAsync(target, cancellationToken))
         {
+            _log?.Warn("bridge.retry.activationFailed", $"run={_runId} {DescribeTarget(target)}");
             OperationFailed?.Invoke(this, "无法重新激活原来的 NoMachine 窗口，文字已保留在剪贴板中。");
             return;
         }
@@ -131,12 +157,14 @@ public sealed class InputBridgeCoordinator
         if (!_targetWindowService.IsValidTarget(target, _options)
             || !_targetWindowService.IsForegroundTarget(target))
         {
+            _log?.Warn("bridge.retry.lostForeground", $"run={_runId} {DescribeTarget(target)}");
             OperationFailed?.Invoke(this, "目标窗口已不再是前台窗口，文字已保留在剪贴板中。");
             return;
         }
 
         if (!_targetWindowService.TryGetCursorScreenPosition(target, out var screenPosition))
         {
+            _log?.Warn("bridge.retry.cursorPositionFailed", $"run={_runId} {DescribeTarget(target)}");
             OperationFailed?.Invoke(this, "无法计算 NoMachine 当前窗口中的原始鼠标位置，文字已保留在剪贴板中。");
             return;
         }
@@ -147,6 +175,7 @@ public sealed class InputBridgeCoordinator
             _pasteMethod,
             _customInput,
             cancellationToken);
+        _log?.Info("bridge.retry.pasteSent", $"run={_runId} method={_pasteMethod}");
     }
 
     private async Task RunCoreAsync(TargetWindow target, CancellationToken cancellationToken)
@@ -181,6 +210,9 @@ public sealed class InputBridgeCoordinator
             return;
         }
 
+        // 以下序列号对比只记日志，不改变任何行为：每次自己写入后重取基线，之后序列号变化即说明别人改写了剪贴板。
+        var baseline = _clipboardSequence();
+
         if (!_targetWindowService.IsValidTarget(target, _options))
         {
             _log?.Warn("bridge.run.targetInvalid", DescribeTarget(target));
@@ -209,10 +241,15 @@ public sealed class InputBridgeCoordinator
         }
 
         // 激活 NoMachine 可能触发旧剪贴板回写，焦点稳定后分两次重写新内容，再留出同步时间。
+        LogIfClipboardChanged("beforeRewrite1", baseline);
         await _clipboardService.SetTextAsync(text, cancellationToken);
+        baseline = _clipboardSequence();
         await Task.Delay(_options.PostActivationClipboardRewriteDelay, cancellationToken);
+        LogIfClipboardChanged("beforeRewrite2", baseline);
         await _clipboardService.SetTextAsync(text, cancellationToken);
+        baseline = _clipboardSequence();
         await Task.Delay(_options.PostActivationClipboardSettleDelay, cancellationToken);
+        LogIfClipboardChanged("beforePaste", baseline);
         _log?.Info(
             "bridge.run.clipboardRewritten",
             $"rewriteDelayMs={_options.PostActivationClipboardRewriteDelay.TotalMilliseconds} "
@@ -233,6 +270,10 @@ public sealed class InputBridgeCoordinator
             return;
         }
 
+        _log?.Info(
+            "bridge.run.prePaste",
+            $"run={_runId} clipboardChangedStages={(_changedStages.Count == 0 ? "none" : string.Join(',', _changedStages))}");
+
         var pasteStopwatch = Stopwatch.StartNew();
         await _textInjectionService.PasteAsync(
             target,
@@ -243,6 +284,21 @@ public sealed class InputBridgeCoordinator
         _log?.Info(
             "bridge.run.pasteSent",
             $"method={_pasteMethod} elapsedMs={pasteStopwatch.ElapsedMilliseconds}");
+    }
+
+    private void LogIfClipboardChanged(string stage, uint baseline)
+    {
+        var current = _clipboardSequence();
+        if (current == baseline)
+        {
+            return;
+        }
+
+        _changedStages.Add(stage);
+        _log?.Warn(
+            "bridge.run.clipboardChanged",
+            $"run={_runId} stage={stage} sequenceBaseline={baseline} sequenceNow={current} "
+            + (_clipboardContentOwner() ?? "contentOwner=unknown"));
     }
 
     private async Task<bool> WriteAndVerifyClipboardAsync(

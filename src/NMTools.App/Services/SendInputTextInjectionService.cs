@@ -399,22 +399,36 @@ public sealed class SendInputTextInjectionService : ITextInjectionService
         }
 
         // 若超时仍有修饰键处于按下状态，主动发送 KeyUp 清理逻辑状态，避免污染后续按键。
+        var forced = new List<string>(3);
         if (IsKeyPhysicallyDown(VkControl))
         {
+            forced.Add("ctrl");
             await SendKeyboardAsync(target, ScanCodeLeftControl, keyUp: true, CancellationToken.None);
             await SendKeyboardAsync(target, ScanCodeLeftControl, keyUp: true, CancellationToken.None, extended: true);
         }
 
         if (IsKeyPhysicallyDown(VkMenu))
         {
+            forced.Add("alt");
             await SendKeyboardAsync(target, ScanCodeLeftAlt, keyUp: true, CancellationToken.None);
             await SendKeyboardAsync(target, ScanCodeLeftAlt, keyUp: true, CancellationToken.None, extended: true);
         }
 
         if (IsKeyPhysicallyDown(VkShift))
         {
+            forced.Add("shift");
             await SendKeyboardAsync(target, ScanCodeLeftShift, keyUp: true, CancellationToken.None);
             await SendKeyboardAsync(target, ScanCodeRightShift, keyUp: true, CancellationToken.None);
+        }
+
+        // 修饰键残留会让远端收到 Ctrl+Alt+V 之类的错误组合键，是"发出了但没粘上"的可疑原因之一；
+        // 只在确实等待过或被迫强制释放时记录，避免常规路径刷屏。
+        if (waited > 0 || forced.Count > 0)
+        {
+            _log?.Info(
+                "input.modifiers.checked",
+                $"waitedMs={waited} maxWaitMs={ModifierReleaseMaxWaitMilliseconds} "
+                + $"forcedRelease={(forced.Count == 0 ? "none" : string.Join(',', forced))}");
         }
     }
 

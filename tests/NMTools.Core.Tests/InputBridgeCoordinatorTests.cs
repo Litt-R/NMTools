@@ -234,6 +234,50 @@ public sealed class InputBridgeCoordinatorTests
     }
 
     [Fact]
+    public async Task RetryPasteAsync_LogsPasteSentAndStaysRemoteUnconfirmed()
+    {
+        var log = new FakeLog();
+        var clipboard = new FakeClipboardService();
+        var injector = new FakeTextInjectionService();
+        var coordinator = new InputBridgeCoordinator(
+            new FakeTargetWindowService(),
+            clipboard,
+            injector,
+            new InputBridgeOptions { PasteDelay = TimeSpan.Zero },
+            () => null,
+            PasteShortcutAction.Enter,
+            log);
+
+        await coordinator.RetryPasteAsync(CreateTarget());
+
+        Assert.Equal(1, injector.PasteCount);
+        Assert.Equal(0, clipboard.SetTextCount);
+        Assert.Contains("trigger=retry", log.Single("bridge.retry.start"));
+        Assert.Contains("remoteConfirmed=false", log.Single("bridge.retry.completed"));
+        Assert.DoesNotContain(log.Entries, e => e.Event == "bridge.retry.targetInvalid");
+    }
+
+    [Fact]
+    public async Task RetryPasteAsync_TargetInvalidIsLoggedInsteadOfFailingSilently()
+    {
+        var log = new FakeLog();
+        var injector = new FakeTextInjectionService();
+        var coordinator = new InputBridgeCoordinator(
+            new FakeTargetWindowService { IsValid = false },
+            new FakeClipboardService(),
+            injector,
+            new InputBridgeOptions { PasteDelay = TimeSpan.Zero },
+            () => null,
+            PasteShortcutAction.Enter,
+            log);
+
+        await coordinator.RetryPasteAsync(CreateTarget());
+
+        Assert.Equal(0, injector.PasteCount);
+        Assert.Contains("run=", log.Single("bridge.retry.targetInvalid"));
+    }
+
+    [Fact]
     public async Task RetryPasteAsync_ClipboardOnlyActionDoesNotActivateOrPaste()
     {
         var targetService = new FakeTargetWindowService();
@@ -261,6 +305,173 @@ public sealed class InputBridgeCoordinatorTests
         Assert.Equal(0, targetService.ActivateCount);
         Assert.Equal(0, clipboard.SetTextCount);
         Assert.Equal(0, injector.PasteCount);
+    }
+
+    [Fact]
+    public async Task UnchangedClipboardSequenceLogsNoChangeAndMarksRemoteUnconfirmed()
+    {
+        var log = new FakeLog();
+        var injector = new FakeTextInjectionService();
+        var coordinator = CreateLoggedCoordinator(log, injector, sequence: Sequence(7));
+
+        await coordinator.RunAsync(CreateTarget());
+
+        Assert.Equal(1, injector.PasteCount);
+        Assert.DoesNotContain(log.Entries, e => e.Event == "bridge.run.clipboardChanged");
+        Assert.Contains("clipboardChangedStages=none", log.Single("bridge.run.prePaste"));
+        Assert.Contains("remoteConfirmed=false", log.Single("bridge.run.completed"));
+    }
+
+    [Fact]
+    public async Task ClipboardChangedAfterOurWriteIsLoggedWithStageButStillPastes()
+    {
+        var log = new FakeLog();
+        var injector = new FakeTextInjectionService();
+
+        // 调用顺序：基线、beforeRewrite1 检查、写入后基线、beforeRewrite2 检查、写入后基线、beforePaste 检查。
+        // 第 4 次读到 3，说明第一次重写之后有别人改写了剪贴板。
+        var coordinator = CreateLoggedCoordinator(
+            log,
+            injector,
+            sequence: Sequence(1, 1, 2, 3, 3, 3),
+            contentOwner: () => "contentOwnerProcess=nxplayer");
+
+        await coordinator.RunAsync(CreateTarget());
+
+        var warn = log.Single("bridge.run.clipboardChanged");
+        Assert.Contains("stage=beforeRewrite2", warn);
+        Assert.Contains("contentOwnerProcess=nxplayer", warn);
+        Assert.Contains("clipboardChangedStages=beforeRewrite2", log.Single("bridge.run.prePaste"));
+        Assert.Equal(1, injector.PasteCount);
+    }
+
+    [Fact]
+    public async Task ClipboardChangedDuringSettleWindowIsLoggedAsBeforePaste()
+    {
+        var log = new FakeLog();
+        var coordinator = CreateLoggedCoordinator(
+            log,
+            new FakeTextInjectionService(),
+            sequence: Sequence(1, 1, 2, 2, 3, 4));
+
+        await coordinator.RunAsync(CreateTarget());
+
+        Assert.Contains("stage=beforePaste", log.Single("bridge.run.clipboardChanged"));
+    }
+
+    [Fact]
+    public async Task RetryTriggerIsLoggedOnRunStart()
+    {
+        var log = new FakeLog();
+        var coordinator = CreateLoggedCoordinator(
+            log,
+            new FakeTextInjectionService(),
+            sequence: Sequence(7),
+            trigger: "retry");
+
+        await coordinator.RunAsync(CreateTarget());
+
+        Assert.Contains("trigger=retry", log.Single("bridge.run.start"));
+    }
+
+    [Fact]
+    public async Task EachRunGetsItsOwnRunIdSharedByItsLogLines()
+    {
+        var log = new FakeLog();
+        var first = CreateLoggedCoordinator(log, new FakeTextInjectionService(), Sequence(7));
+        var second = CreateLoggedCoordinator(log, new FakeTextInjectionService(), Sequence(7));
+
+        await first.RunAsync(CreateTarget());
+        await second.RunAsync(CreateTarget());
+
+        var starts = log.Entries.Where(e => e.Event == "bridge.run.start").ToArray();
+        var completes = log.Entries.Where(e => e.Event == "bridge.run.completed").ToArray();
+        Assert.Equal(2, starts.Length);
+        Assert.NotEqual(RunIdOf(starts[0].Message), RunIdOf(starts[1].Message));
+        Assert.Equal(RunIdOf(starts[0].Message), RunIdOf(completes[0].Message));
+        Assert.Equal(RunIdOf(starts[1].Message), RunIdOf(completes[1].Message));
+    }
+
+    [Fact]
+    public async Task LogsNeverContainSubmittedText()
+    {
+        var log = new FakeLog();
+        var coordinator = CreateLoggedCoordinator(
+            log,
+            new FakeTextInjectionService(),
+            sequence: Sequence(1, 1, 2, 3, 3, 3),
+            text: "SECRET-PAYLOAD-123");
+
+        await coordinator.RunAsync(CreateTarget());
+
+        Assert.NotEmpty(log.Entries);
+        Assert.All(log.Entries, e => Assert.DoesNotContain("SECRET-PAYLOAD-123", e.Message));
+    }
+
+    private static string RunIdOf(string message)
+    {
+        var start = message.IndexOf("run=", StringComparison.Ordinal) + 4;
+        var end = message.IndexOf(' ', start);
+        return message[start..end];
+    }
+
+    private static Func<uint> Sequence(params uint[] values)
+    {
+        var index = 0;
+        return () => values[Math.Min(index++, values.Length - 1)];
+    }
+
+    private static InputBridgeCoordinator CreateLoggedCoordinator(
+        FakeLog log,
+        FakeTextInjectionService injector,
+        Func<uint> sequence,
+        Func<string?>? contentOwner = null,
+        string trigger = "submit",
+        string text = "new text")
+    {
+        return new InputBridgeCoordinator(
+            new FakeTargetWindowService(),
+            new FakeClipboardService(),
+            injector,
+            new InputBridgeOptions
+            {
+                PreActivationClipboardDelay = TimeSpan.Zero,
+                PostActivationClipboardRewriteDelay = TimeSpan.Zero,
+                PostActivationClipboardSettleDelay = TimeSpan.Zero,
+                PasteDelay = TimeSpan.Zero,
+            },
+            () => text,
+            pasteAction: null,
+            log: log,
+            clipboardSequence: sequence,
+            clipboardContentOwner: contentOwner ?? (() => null))
+        {
+            Trigger = trigger,
+        };
+    }
+
+    private sealed class FakeLog : IDiagnosticLog
+    {
+        public List<(string Level, string Event, string Message)> Entries { get; } = [];
+
+        public bool IsEnabled => true;
+
+        public void Info(string eventName, string message) => Entries.Add(("INFO", eventName, message));
+
+        public void Warn(string eventName, string message) => Entries.Add(("WARN", eventName, message));
+
+        public void Error(string eventName, string message, Exception? exception = null) =>
+            Entries.Add(("ERROR", eventName, message));
+
+        public void Timing(string eventName, long elapsedMilliseconds)
+        {
+        }
+
+        public void Flush()
+        {
+        }
+
+        public string Single(string eventName) => Entries.Single(e => e.Event == eventName).Message;
     }
 
     private static InputBridgeCoordinator CreateCoordinator(

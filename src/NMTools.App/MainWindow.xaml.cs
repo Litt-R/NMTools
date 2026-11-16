@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Interop;
 using NMTools.App.Infrastructure;
@@ -29,6 +30,7 @@ public partial class MainWindow : Window
     private bool _settingsOpen;
     private bool _allowClose;
     private bool _resourcesDisposed;
+    private long _lastSubmitTimestamp;
     private readonly object _windowSettingsSaveLock = new();
     private Task _pendingWindowSettingsSave = Task.CompletedTask;
 
@@ -449,6 +451,7 @@ public partial class MainWindow : Window
     {
         if (_settingsOpen)
         {
+            _log?.Info("bridge.hotkey.ignored", "reason=settingsOpen");
             return;
         }
 
@@ -460,6 +463,8 @@ public partial class MainWindow : Window
 
         if (Interlocked.CompareExchange(ref _inputFlowActive, 1, 0) != 0)
         {
+            // 上一次提交还在激活、重写剪贴板或等待同步，此时再唤起会被直接吞掉，用户看到的就是"快捷键没反应"。
+            _log?.Info("bridge.hotkey.ignored", "reason=previousFlowStillRunning");
             return;
         }
 
@@ -469,6 +474,10 @@ public partial class MainWindow : Window
             var target = _targetWindowService.CaptureForegroundWindow();
             if (target is null || !_targetWindowService.IsValidTarget(target, _options))
             {
+                // 不记录前台进程名：用户在别的软件里误按快捷键时，那是与本程序无关的信息。
+                _log?.Info(
+                    "bridge.hotkey.ignored",
+                    target is null ? "reason=noForegroundWindow" : "reason=notNoMachine");
                 ShowTransientHintToast("当前不在 NoMachine 窗口内");
                 return;
             }
@@ -487,6 +496,7 @@ public partial class MainWindow : Window
 
             _activeInputWindow = inputWindow;
             bool? result;
+            var bubbleStopwatch = Stopwatch.StartNew();
             try
             {
                 result = inputWindow.ShowDialog();
@@ -495,6 +505,12 @@ public partial class MainWindow : Window
             {
                 _activeInputWindow = null;
             }
+
+            // 气泡打开时长和距上一次提交的间隔，用于验证"闲置一段时间后首次提交更容易没粘上"。
+            _log?.Info(
+                "bridge.bubble.closed",
+                $"submitted={result == true} openMs={bubbleStopwatch.ElapsedMilliseconds} "
+                + $"sinceLastSubmitMs={DescribeSinceLastSubmit()}");
 
             if (result != true || string.IsNullOrEmpty(inputWindow.EnteredText))
             {
@@ -512,6 +528,7 @@ public partial class MainWindow : Window
             _lastSubmittedTarget = target;
             _lastSubmittedText = submittedText;
             _lastSubmittedPasteAction = selectedAction;
+            _lastSubmitTimestamp = Stopwatch.GetTimestamp();
 
             Interlocked.Exchange(ref _retryQueued, 0);
             var toast = ShowStatusToast(target.BubbleAnchorPosition, "正在同步剪贴板并粘贴…");
@@ -557,6 +574,9 @@ public partial class MainWindow : Window
     {
         if (_settingsOpen || _activeInputWindow is { IsVisible: true })
         {
+            _log?.Info(
+                "bridge.retry.ignored",
+                _settingsOpen ? "reason=settingsOpen" : "reason=bubbleOpen");
             return;
         }
 
@@ -564,6 +584,9 @@ public partial class MainWindow : Window
         {
             // 如果首次粘贴还在等待同步延迟期间，用户就按下了重试快捷键，记录排队并在当前轮结束后立即补发。
             Interlocked.Exchange(ref _retryQueued, 1);
+            _log?.Info(
+                "bridge.retry.queued",
+                $"sinceLastSubmitMs={DescribeSinceLastSubmit()} hasLastText={!string.IsNullOrEmpty(_lastSubmittedText)}");
             return;
         }
 
@@ -592,8 +615,21 @@ public partial class MainWindow : Window
         }
     }
 
+    private string DescribeSinceLastSubmit()
+    {
+        return _lastSubmitTimestamp == 0
+            ? "none"
+            : ((long)Stopwatch.GetElapsedTime(_lastSubmitTimestamp).TotalMilliseconds).ToString();
+    }
+
     private async Task<string?> ExecuteRetryCoreAsync()
     {
+        // 短间隔内按重试，几乎等同于"刚才那次没粘上"，是日志里最接近"失败"的信号；应用自身无法确认远端结果。
+        _log?.Info(
+            "bridge.retry.requested",
+            $"sinceLastSubmitMs={DescribeSinceLastSubmit()} hasLastText={!string.IsNullOrEmpty(_lastSubmittedText)} "
+            + $"lastTextLength={_lastSubmittedText?.Length ?? 0}");
+
         var target = _lastSubmittedTarget;
         if (target is null || !_targetWindowService.IsValidTarget(target, _options))
         {
@@ -622,7 +658,10 @@ public partial class MainWindow : Window
                 _options,
                 () => lastText,
                 action,
-                _log);
+                _log)
+            {
+                Trigger = "retry",
+            };
             coordinator.OperationFailed += (_, msg) => failureMessage = msg;
             if (!string.IsNullOrEmpty(lastText))
             {

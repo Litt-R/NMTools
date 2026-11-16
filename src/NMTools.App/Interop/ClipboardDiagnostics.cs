@@ -36,6 +36,24 @@ public static class ClipboardDiagnostics
     }
 
     /// <summary>
+    /// 返回当前剪贴板内容所有者（最后一次写入者）的描述，只读且不占用剪贴板。
+    /// 所有者窗口已销毁或以 NULL 写入时返回 null。
+    /// </summary>
+    public static string? DescribeClipboardContentOwner()
+    {
+        var handle = NativeMethods.GetClipboardOwner();
+        if (handle == IntPtr.Zero)
+        {
+            return null;
+        }
+
+        NativeMethods.GetWindowThreadProcessId(handle, out var processId);
+        var className = GetWindowClassName(handle);
+        var processName = GetProcessName(processId);
+        return $"contentOwnerProcess={processName} contentOwnerPid={processId} contentOwnerClass={className}";
+    }
+
+    /// <summary>
     /// 剪贴板序列号。写入前后对比可以判断写入是否真的改变了剪贴板内容。
     /// </summary>
     public static uint GetSequenceNumber()
@@ -123,6 +141,9 @@ public static class ClipboardDiagnostics
     {
         [DllImport("user32.dll")]
         public static extern IntPtr GetOpenClipboardWindow();
+
+        [DllImport("user32.dll")]
+        public static extern IntPtr GetClipboardOwner();
 
         [DllImport("user32.dll")]
         public static extern uint GetClipboardSequenceNumber();
