@@ -359,6 +359,16 @@ public sealed class UpdateService : IDisposable
     }
 
 
+    /// <summary>
+    /// 把更新准备阶段的失败分类翻译成用户能看懂的一句话。
+    ///
+    /// 单独暴露成 public 是因为这些文案是用户唯一会看到的解释：
+    /// 0.7.1 每次更新都弹"大小不正确"就是因为文案与真实原因脱节。
+    /// 必须能被测试逐条断言，而不是只能靠手工触发。
+    /// </summary>
+    public static string DescribePrepareFailureForTesting(PrepareFailureReason reason) =>
+        DescribePrepareFailure(reason);
+
     private static string DescribePrepareFailure(PrepareFailureReason reason) => reason switch
     {
         PrepareFailureReason.ChecksumMismatch =>
