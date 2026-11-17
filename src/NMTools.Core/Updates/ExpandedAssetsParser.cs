@@ -39,7 +39,11 @@ public static partial class ExpandedAssetsParser
             window = window[..nextAsset.Index];
         }
 
-        return new AssetInfo(ReadDigest(window), ReadSizeBytes(window));
+        // 体积只用于"合理性检查"（上限、粗略对比），不能当作精确字节数：
+        // expanded_assets 里的 "69.9 MB" 是页面上给人和机器都有用的显示值，
+        // GitHub 按 1024 进制保留一位小数后四舍五入，与真实字节数的差异可达数万字节。
+        // 用它做相等比较会让任何正常下载都判为大小不符。
+        return new AssetInfo(ReadDigest(window), ReadDeclaredSizeBytes(window));
     }
 
     /// <summary>
@@ -62,10 +66,13 @@ public static partial class ExpandedAssetsParser
     }
 
     /// <summary>
-    /// 读取体积文本，例如 <c>68.8 MB</c>。用于下载时比对 Content-Length。
-    /// 解析不出来时返回 null，此时只做写入字节数校验。
+    /// 读取网页上显示的体积文本，例如 <c>68.8 MB</c>，换算成字节。
+    ///
+    /// **这是近似值，不能用于相等比较。** 页面按 1024 进制保留最多一位小数，
+    /// 真实大小与换算结果可能相差数万字节；任何精确性要求都必须由 SHA-256 承担。
+    /// 解析不出来时返回 null。
     /// </summary>
-    private static long? ReadSizeBytes(string window)
+    private static long? ReadDeclaredSizeBytes(string window)
     {
         var match = SizePattern().Match(window);
         if (!match.Success)

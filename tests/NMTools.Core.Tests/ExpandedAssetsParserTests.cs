@@ -40,6 +40,25 @@ public sealed class ExpandedAssetsParserTests
         Assert.InRange(asset.SizeBytes!.Value, 72_100_000, 72_200_000);
     }
 
+    /// <summary>
+    /// 页面体积是四舍五入后的近似值，与真实字节数存在数万字节的差异。
+    /// 这组数字取自 v0.7.2 的现场：页面显示 69.9 MB，真实文件 73,252,268 字节。
+    /// 解析结果必然与真实值不等，任何把它当精确值做相等比较的下游都必然失败。
+    /// </summary>
+    [Fact]
+    public void Find_SizeIsApproximateNotExact()
+    {
+        const long realArchiveBytes = 73_252_268;
+
+        var html = RealHtml.Replace("68.8 MB", "69.9 MB");
+        var asset = ExpandedAssetsParser.Find(html, "NMTools-v0.7.0-win-x64.zip");
+
+        Assert.NotNull(asset.SizeBytes);
+        Assert.NotEqual(realArchiveBytes, asset.SizeBytes!.Value);
+        // 误差仍在 5% 的合理性容差内，说明"粗略比对"能用、"相等比较"不能用。
+        Assert.InRange(asset.SizeBytes.Value, realArchiveBytes * 95 / 100, realArchiveBytes * 105 / 100);
+    }
+
     [Fact]
     public void Find_DoesNotPickUpDigestFromAnotherAsset()
     {

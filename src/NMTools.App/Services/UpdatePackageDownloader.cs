@@ -106,14 +106,17 @@ public sealed class UpdatePackageDownloader : IUpdatePackageDownloader, IDisposa
                 return DownloadResult.Failure(UpdateDownloadFailureReason.HttpStatus);
             }
 
-            // 声明大小与清单不符时直接拒绝，避免下载到错误资产。
+            // 清单里的体积来自发布页面的显示文本，是四舍五入后的近似值（例如 "69.9 MB"），
+            // 与真实字节数可能相差数万字节。它只能用来做上限检查和粗略比对，
+            // 绝不能做相等比较：那样任何一次正常下载都会被判为大小不符。
+            // 精确性由 SHA-256 负责。
             if (manifest.DownloadSizeBytes is long declared
                 && response.Content.Headers.ContentLength is long actualLength
-                && actualLength != declared)
+                && IsImplausibleSize(actualLength, declared))
             {
                 _log?.Warn(
                     "update.download.sizeMismatch",
-                    $"declared={declared} actual={actualLength}");
+                    $"declaredApprox={declared} actual={actualLength}");
                 return DownloadResult.Failure(UpdateDownloadFailureReason.SizeMismatch);
             }
 
@@ -128,12 +131,13 @@ public sealed class UpdatePackageDownloader : IUpdatePackageDownloader, IDisposa
                 return DownloadResult.Failure(UpdateDownloadFailureReason.SizeMismatch);
             }
 
-            if (manifest.DownloadSizeBytes is long expected && written.Value != expected)
+            if (manifest.DownloadSizeBytes is long expected
+                && IsImplausibleSize(written.Value, expected))
             {
                 TryDelete(archivePath);
                 _log?.Warn(
                     "update.download.sizeMismatch",
-                    $"declared={expected} written={written.Value}");
+                    $"declaredApprox={expected} written={written.Value}");
                 return DownloadResult.Failure(UpdateDownloadFailureReason.SizeMismatch);
             }
 
@@ -226,6 +230,24 @@ public sealed class UpdatePackageDownloader : IUpdatePackageDownloader, IDisposa
         }
 
         return total;
+    }
+
+    /// <summary>
+    /// 实际大小与清单里的近似值差得离谱时返回 true。
+    ///
+    /// 页面上的体积保留一位小数，换算误差最多几十 KB，相对 60~70 MB 的包不足 0.1%。
+    /// 这里留 5% 的宽容度：既容得下四舍五入，又能拦住"下到了完全不同的文件"
+    /// （例如 HTML 错误页、源码包或另一个版本的包）。
+    /// </summary>
+    private static bool IsImplausibleSize(long actual, long declaredApprox)
+    {
+        if (declaredApprox <= 0)
+        {
+            return false;
+        }
+
+        var tolerance = declaredApprox / 20;
+        return Math.Abs(actual - declaredApprox) > tolerance;
     }
 
     private static string? ComputeSha256(string path)

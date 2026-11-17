@@ -52,6 +52,9 @@ public sealed class UpdateInstaller : IDisposable
 
         if (!download.IsSuccess)
         {
+            // 下载器只删除半成品文件，目录本身会留下来。失败后用户会看到发布目录里
+            // 多出一个空的 .update-staging，容易被当成更新真的改动了程序目录。
+            TryDeleteDirectory(stagingDirectory);
             return PrepareResult.Failure(MapDownloadFailure(download.FailureReason));
         }
 
