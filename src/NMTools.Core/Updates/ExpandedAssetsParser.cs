@@ -15,13 +15,17 @@ namespace NMTools.Core.Updates;
 public static partial class ExpandedAssetsParser
 {
     /// <summary>
-    /// 查找指定资产名对应的体积和摘要。找不到资产时返回 <see cref="AssetInfo.Empty"/>。
+    /// 查找指定资产名对应的体积和摘要。
+    ///
+    /// 返回的 <see cref="AssetInfo.Status"/> 区分了"页面没拿到"和"页面拿到了但读不出摘要"：
+    /// 前者是网络问题，按 ADR 0006 降级即可；后者说明本解析器已经和上游格式对不上，
+    /// 必须让维护者看见，否则会长期静默地不做任何内容校验。
     /// </summary>
     public static AssetInfo Find(string? html, string assetName)
     {
         if (string.IsNullOrWhiteSpace(html) || string.IsNullOrWhiteSpace(assetName))
         {
-            return AssetInfo.Empty;
+            return AssetInfo.PageMissing;
         }
 
         // 按资产行切分：每个资产是 <li> 里的一段，摘要和体积都在同一段。
@@ -29,7 +33,7 @@ public static partial class ExpandedAssetsParser
         var anchor = FindAssetAnchor(html, assetName);
         if (!anchor.Success)
         {
-            return AssetInfo.Empty;
+            return AssetInfo.AssetNotFound;
         }
 
         var window = html[anchor.Index..];
@@ -43,7 +47,11 @@ public static partial class ExpandedAssetsParser
         // expanded_assets 里的 "69.9 MB" 是页面上给人和机器都有用的显示值，
         // GitHub 按 1024 进制保留一位小数后四舍五入，与真实字节数的差异可达数万字节。
         // 用它做相等比较会让任何正常下载都判为大小不符。
-        return new AssetInfo(ReadDigest(window), ReadDeclaredSizeBytes(window));
+        var digest = ReadDigest(window);
+        return new AssetInfo(
+            digest,
+            ReadDeclaredSizeBytes(window),
+            digest is null ? AssetLookupStatus.DigestMissing : AssetLookupStatus.Resolved);
     }
 
     /// <summary>
@@ -118,8 +126,36 @@ public static partial class ExpandedAssetsParser
 }
 
 /// <param name="Sha256">小写十六进制摘要；未知时为 null。</param>
-/// <param name="SizeBytes">资产字节数；未知时为 null。</param>
-public sealed record AssetInfo(string? Sha256, long? SizeBytes)
+/// <param name="SizeBytes">页面上显示的近似字节数；未知时为 null。只用于展示和进度条，不参与校验。</param>
+/// <param name="Status">这次查找停在哪一步，用于区分网络降级与解析器失效。</param>
+public sealed record AssetInfo(string? Sha256, long? SizeBytes, AssetLookupStatus Status)
 {
-    public static AssetInfo Empty { get; } = new(null, null);
+    /// <summary>资产页面根本没拿到：网络失败、超时或非 2xx。属于可降级的正常情况。</summary>
+    public static AssetInfo PageMissing { get; } = new(null, null, AssetLookupStatus.PageMissing);
+
+    /// <summary>页面拿到了，但里面找不到我们的便携包资产链接。多半是上游结构变了。</summary>
+    public static AssetInfo AssetNotFound { get; } = new(null, null, AssetLookupStatus.AssetNotFound);
+
+    /// <summary>找到了资产，但没读到 sha256 摘要。解析器大概率已与上游格式脱节。</summary>
+    public bool IndicatesParserFailure =>
+        Status is AssetLookupStatus.AssetNotFound or AssetLookupStatus.DigestMissing;
+}
+
+/// <summary>
+/// 资产查找的结果状态。必须把"没拿到页面"和"拿到了但读不出摘要"分开：
+/// 前者是网络问题，后者意味着解析器需要维护，两者在日志里不能长得一样。
+/// </summary>
+public enum AssetLookupStatus
+{
+    /// <summary>没拿到资产页面（网络、超时、HTTP 非 2xx）。</summary>
+    PageMissing,
+
+    /// <summary>拿到了页面，但找不到指定资产的链接。</summary>
+    AssetNotFound,
+
+    /// <summary>找到了资产，但没有可用的 sha256 摘要。</summary>
+    DigestMissing,
+
+    /// <summary>摘要和体积都读到了。</summary>
+    Resolved,
 }

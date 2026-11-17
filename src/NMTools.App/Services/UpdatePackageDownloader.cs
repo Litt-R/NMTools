@@ -7,11 +7,12 @@ using NMTools.Core.Updates;
 namespace NMTools.App.Services;
 
 /// <summary>
-/// 下载便携包并校验大小与 SHA-256。
+/// 下载便携包并按 SHA-256 校验内容。
 ///
 /// 约束（见 ADR 0005）：
 /// - 只允许下载到调用方指定的暂存目录，路径由 <see cref="PortableLayout"/> 决定；
 /// - 大小上限固定，超限立即中止，不把整个大文件读进内存；
+/// - 清单里的体积是页面显示值，只用于界面，**不参与任何校验**；
 /// - 校验失败删除已下载文件，不留半成品；
 /// - 日志只记录结果分类和字节数，不记录 URL、文件名或响应内容。
 /// </summary>
@@ -106,47 +107,50 @@ public sealed class UpdatePackageDownloader : IUpdatePackageDownloader, IDisposa
                 return DownloadResult.Failure(UpdateDownloadFailureReason.HttpStatus);
             }
 
-            // 清单里的体积来自发布页面的显示文本，是四舍五入后的近似值（例如 "69.9 MB"），
-            // 与真实字节数可能相差数万字节。它只能用来做上限检查和粗略比对，
-            // 绝不能做相等比较：那样任何一次正常下载都会被判为大小不符。
-            // 精确性由 SHA-256 负责。
-            if (manifest.DownloadSizeBytes is long declared
-                && response.Content.Headers.ContentLength is long actualLength
-                && IsImplausibleSize(actualLength, declared))
-            {
-                _log?.Warn(
-                    "update.download.sizeMismatch",
-                    $"declaredApprox={declared} actual={actualLength}");
-                return DownloadResult.Failure(UpdateDownloadFailureReason.SizeMismatch);
-            }
-
+            // 不拿清单体积做任何比对。它来自发布页面的显示文本（如 "69.9 MB"），
+            // 是四舍五入后的近似值，与真实字节数必然不等；0.7.1 正是用它对下载结果做
+            // 相等比较，导致所有自动更新被判为大小不符。
+            // 内容是否完整、是否被替换，统一交给 SHA-256：它由上传时的文件内容算出，
+            // 是精确值，不需要容差。体积只用于界面显示和进度条。
             var written = await WriteToFileAsync(
                 response,
                 archivePath,
                 progress,
                 linkedSource.Token).ConfigureAwait(false);
 
+            // null 表示实际字节数超过 MaxArchiveBytes，文件明显不是便携包。
             if (written is null)
             {
-                return DownloadResult.Failure(UpdateDownloadFailureReason.SizeMismatch);
-            }
-
-            if (manifest.DownloadSizeBytes is long expected
-                && IsImplausibleSize(written.Value, expected))
-            {
                 TryDelete(archivePath);
-                _log?.Warn(
-                    "update.download.sizeMismatch",
-                    $"declaredApprox={expected} written={written.Value}");
+                _log?.Warn("update.download.tooLarge", $"limit={MaxArchiveBytes}");
                 return DownloadResult.Failure(UpdateDownloadFailureReason.SizeMismatch);
             }
 
-            // 发布说明里声明了 SHA-256 就比对。它是可选的：没有声明时只做大小与结构校验，
-            // 不因为发布流程没写哈希就让更新不可用。
-            if (!string.IsNullOrWhiteSpace(manifest.ExpectedSha256))
+            // SHA-256 是唯一的内容校验。有摘要就必须核对，不符即拒绝。
+            // 拿不到摘要时按 ADR 0006 降级放行，但要把原因记清楚：
+            // 网络问题降级是可接受的，解析器与上游格式脱节则必须让维护者看见。
+            // 两者用不同的事件名和级别，避免"静默失去校验"长期无人发现。
+            if (string.IsNullOrWhiteSpace(manifest.ExpectedSha256))
+            {
+                if (manifest.AssetStatus == AssetLookupStatus.PageMissing)
+                {
+                    _log?.Warn(
+                        "update.download.checksumUnavailable",
+                        "asset list was not reachable, continuing without content verification");
+                }
+                else
+                {
+                    // 页面拿到了却读不出摘要：我们的解析器该修了。仍然放行，
+                    // 但用 ERROR 级别确保它出现在日志和故障排查里。
+                    _log?.Error(
+                        "update.download.parserOutOfDate",
+                        $"assetStatus={manifest.AssetStatus} no digest parsed, continuing without content verification");
+                }
+            }
+            else
             {
                 var actual = ComputeSha256(archivePath);
-                if (!ReleaseNotesChecksum.Matches(manifest.ExpectedSha256, actual))
+                if (!string.Equals(manifest.ExpectedSha256.Trim(), actual?.Trim(), StringComparison.OrdinalIgnoreCase))
                 {
                     TryDelete(archivePath);
                     _log?.Warn(
@@ -154,11 +158,9 @@ public sealed class UpdatePackageDownloader : IUpdatePackageDownloader, IDisposa
                         $"declared={manifest.ExpectedSha256} actual={actual ?? "none"}");
                     return DownloadResult.Failure(UpdateDownloadFailureReason.ChecksumMismatch);
                 }
-
-                _log?.Info("update.download.checksumOk", "archive matches the checksum in release notes");
             }
 
-            _log?.Info("update.download.completed", $"bytes={written.Value}");
+            _log?.Info("update.download.completed", $"bytes={written.Value} checksum=ok");
             return DownloadResult.Success(archivePath);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -230,24 +232,6 @@ public sealed class UpdatePackageDownloader : IUpdatePackageDownloader, IDisposa
         }
 
         return total;
-    }
-
-    /// <summary>
-    /// 实际大小与清单里的近似值差得离谱时返回 true。
-    ///
-    /// 页面上的体积保留一位小数，换算误差最多几十 KB，相对 60~70 MB 的包不足 0.1%。
-    /// 这里留 5% 的宽容度：既容得下四舍五入，又能拦住"下到了完全不同的文件"
-    /// （例如 HTML 错误页、源码包或另一个版本的包）。
-    /// </summary>
-    private static bool IsImplausibleSize(long actual, long declaredApprox)
-    {
-        if (declaredApprox <= 0)
-        {
-            return false;
-        }
-
-        var tolerance = declaredApprox / 20;
-        return Math.Abs(actual - declaredApprox) > tolerance;
     }
 
     private static string? ComputeSha256(string path)

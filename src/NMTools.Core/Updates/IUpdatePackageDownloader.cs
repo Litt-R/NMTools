@@ -7,7 +7,7 @@ namespace NMTools.Core.Updates;
 public interface IUpdatePackageDownloader
 {
     /// <summary>
-    /// 下载指定版本的便携包到暂存位置，并校验大小与 SHA-256。
+    /// 下载指定版本的便携包到暂存位置，并按 SHA-256 校验内容。
     ///
     /// 实现必须保证：任一环节失败都清理本次下载的临时文件，不留下半成品；
     /// 不覆盖 <paramref name="stagingDirectory"/> 之外的文件。
@@ -50,10 +50,10 @@ public enum UpdateDownloadFailureReason
     /// <summary>HTTP 非成功状态码。</summary>
     HttpStatus,
 
-    /// <summary>下载体积与清单声明不符，或超出上限。</summary>
+    /// <summary>下载体积超出上限，文件不是便携包。</summary>
     SizeMismatch,
 
-    /// <summary>SHA-256 与发布说明声明的不符，说明内容被改动或下载损坏。</summary>
+    /// <summary>缺少 SHA-256 摘要，或摘要与实际内容不符：说明内容被改动、下载损坏或无法确认来源。</summary>
     ChecksumMismatch,
 
     /// <summary>暂存目录不可写或磁盘空间不足。</summary>

@@ -26,14 +26,22 @@ public sealed record UpdateManifest(
     public bool SupportsAutomaticUpdate => DownloadUrl is not null;
 
     /// <summary>
-    /// 发布说明里声明的 SHA-256（如果有）。解析时从 <see cref="Notes"/> 提取，
-    /// 下载完成后用它校验解压前的 zip。
+    /// 发布包的 SHA-256，来自资产列表，由 GitHub 在上传时按文件内容算出。
+    /// 这是唯一的内容校验依据，没有第二个来源。
     ///
-    /// 它不是独立的信任根——说明和包都在同一个 release 里，能改包的人也能改说明。
+    /// 它不是独立的信任根——摘要和包都在同一个 release 里，能改包的人也能换掉资产重传。
     /// 它的价值在于防止传输损坏或 CDN 返回错误内容；真正的保证仍需代码签名。
-    /// 缺失时为 null，此时只做大小与结构校验。
+    /// 缺失时为 null，此时只做结构校验，并按 <see cref="AssetStatus"/> 记录是网络降级
+    /// 还是解析器已与上游格式脱节。
     /// </summary>
     public string? ExpectedSha256 { get; init; }
+
+    /// <summary>
+    /// 资产查找停在哪一步。用于在 <see cref="ExpectedSha256"/> 为 null 时区分原因：
+    /// <see cref="AssetLookupStatus.PageMissing"/> 属于可接受的降级，
+    /// 其余状态说明解析器需要维护。
+    /// </summary>
+    public AssetLookupStatus AssetStatus { get; init; } = AssetLookupStatus.PageMissing;
 
     /// <summary>
     /// 更新说明的最大保留长度。GitHub 的 release body 可能非常长，

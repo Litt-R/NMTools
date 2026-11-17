@@ -106,11 +106,48 @@ public sealed class ExpandedAssetsParserTests
     [InlineData("")]
     [InlineData("   ")]
     [InlineData(null)]
-    [InlineData("<div>no assets here</div>")]
-    public void Find_InvalidHtml_ReturnsEmpty(string? html)
+    public void Find_MissingPage_IsPageMissingNotParserFailure(string? html)
     {
+        // 没拿到资产页面属于网络降级，可以放行更新。
         var asset = ExpandedAssetsParser.Find(html, "NMTools-v0.7.0-win-x64.zip");
 
-        Assert.Equal(AssetInfo.Empty, asset);
+        Assert.Null(asset.Sha256);
+        Assert.Null(asset.SizeBytes);
+        Assert.Equal(AssetLookupStatus.PageMissing, asset.Status);
+        Assert.False(asset.IndicatesParserFailure);
+    }
+
+    [Fact]
+    public void Find_PageWithoutOurAsset_IsReportedAsParserFailure()
+    {
+        // 页面拿到了却没有我们的资产链接：上游结构可能变了，必须能被识别出来，
+        // 不能和"没拿到页面"混为同一种状态。
+        var asset = ExpandedAssetsParser.Find("<div>no assets here</div>", "NMTools-v0.7.0-win-x64.zip");
+
+        Assert.Null(asset.Sha256);
+        Assert.Equal(AssetLookupStatus.AssetNotFound, asset.Status);
+        Assert.True(asset.IndicatesParserFailure);
+    }
+
+    [Fact]
+    public void Find_AssetWithoutDigest_IsReportedAsParserFailure()
+    {
+        // 找到了资产但读不出 sha256 前缀：解析器已经与上游格式脱节。
+        var html = RealHtml.Replace($"sha256:{Digest}", "digest-changed");
+
+        var asset = ExpandedAssetsParser.Find(html, "NMTools-v0.7.0-win-x64.zip");
+
+        Assert.Null(asset.Sha256);
+        Assert.Equal(AssetLookupStatus.DigestMissing, asset.Status);
+        Assert.True(asset.IndicatesParserFailure);
+    }
+
+    [Fact]
+    public void Find_ResolvedAsset_IsNotReportedAsParserFailure()
+    {
+        var asset = ExpandedAssetsParser.Find(RealHtml, "NMTools-v0.7.0-win-x64.zip");
+
+        Assert.Equal(AssetLookupStatus.Resolved, asset.Status);
+        Assert.False(asset.IndicatesParserFailure);
     }
 }

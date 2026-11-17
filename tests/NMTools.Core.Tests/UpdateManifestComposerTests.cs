@@ -79,33 +79,20 @@ public sealed class UpdateManifestComposerTests
     }
 
     [Fact]
-    public void Compose_FallsBackToChecksumInNotes()
+    public void Compose_DoesNotTakeDigestFromReleaseNotes()
     {
-        var xml = AtomXml.Replace(
-            "&lt;ul&gt;&lt;li&gt;Automatic updates.&lt;/li&gt;&lt;/ul&gt;",
-            $@"SHA256: {Digest}");
-
-        var manifest = UpdateManifestComposer.Compose(
-            new ReleaseDocuments("v0.7.0", xml, null));
-
-        Assert.NotNull(manifest);
-        Assert.Equal(Digest, manifest!.ExpectedSha256);
-    }
-
-    [Fact]
-    public void Compose_PrefersAssetDigestOverReleaseNotes()
-    {
-        // 资产列表的摘要由上传内容算出，不需要人工维护，优先于正文里手写的哈希。
+        // 摘要只有一个来源：资产列表。说明正文里即便写了哈希也不采用，
+        // 否则等于引入第二个需要人工维护的真相来源。
         const string notesHash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
         var xml = AtomXml.Replace(
             "&lt;ul&gt;&lt;li&gt;Automatic updates.&lt;/li&gt;&lt;/ul&gt;",
             $"SHA256: {notesHash}");
 
         var manifest = UpdateManifestComposer.Compose(
-            new ReleaseDocuments("v0.7.0", xml, AssetsHtml));
+            new ReleaseDocuments("v0.7.0", xml, null));
 
         Assert.NotNull(manifest);
-        Assert.Equal(Digest, manifest!.ExpectedSha256);
+        Assert.Null(manifest!.ExpectedSha256);
     }
 
     [Theory]
@@ -121,14 +108,14 @@ public sealed class UpdateManifestComposerTests
 
         Assert.NotNull(manifest);
         Assert.Null(manifest!.ExpectedSha256);
+        // 页面拿到了但读不出摘要，说明解析器需要维护，不能与"没拿到页面"混为一谈。
+        Assert.Equal(AssetLookupStatus.DigestMissing, manifest.AssetStatus);
     }
 
     [Fact]
-    public void Compose_FindsChecksumBeyondNotesTruncationLimit()
+    public void Compose_NotesAreTruncatedButManifestIsStillComplete()
     {
-        // 摘要出现在超长说明末尾时也要能取到——截断只影响展示文本。
-        var longNotes = new string('x', UpdateManifest.MaxNotesLength + 100)
-            + "\n\nSHA256: " + Digest;
+        var longNotes = new string('x', UpdateManifest.MaxNotesLength + 100);
         var xml = $"""
         <?xml version="1.0" encoding="UTF-8"?>
         <feed xmlns="http://www.w3.org/2005/Atom">
@@ -140,11 +127,33 @@ public sealed class UpdateManifestComposerTests
         """;
 
         var manifest = UpdateManifestComposer.Compose(
-            new ReleaseDocuments("v0.7.0", xml, null));
+            new ReleaseDocuments("v0.7.0", xml, AssetsHtml));
 
         Assert.NotNull(manifest);
         Assert.Equal(Digest, manifest!.ExpectedSha256);
         Assert.Equal(UpdateManifest.MaxNotesLength, manifest.Notes.Length);
+    }
+
+    [Fact]
+    public void Compose_AssetMissingFromPage_IsDistinctFromDigestMissing()
+    {
+        // 页面拿到了，但没有我们这个资产名：属于上游结构变化，也要能被识别出来。
+        var manifest = UpdateManifestComposer.Compose(
+            new ReleaseDocuments("v0.7.0", AtomXml, "<div>no assets here</div>"));
+
+        Assert.NotNull(manifest);
+        Assert.Null(manifest!.ExpectedSha256);
+        Assert.Equal(AssetLookupStatus.AssetNotFound, manifest.AssetStatus);
+    }
+
+    [Fact]
+    public void Compose_MissingPage_IsMarkedAsPageMissing()
+    {
+        var manifest = UpdateManifestComposer.Compose(
+            new ReleaseDocuments("v0.7.0", AtomXml, null));
+
+        Assert.NotNull(manifest);
+        Assert.Equal(AssetLookupStatus.PageMissing, manifest!.AssetStatus);
     }
 
     [Theory]

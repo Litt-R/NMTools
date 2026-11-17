@@ -47,11 +47,12 @@ public static class UpdateManifestComposer
             downloadUrl,
             asset.SizeBytes)
         {
-            // 优先用资产列表的摘要——它由上传时的文件内容算出，不需要人工维护。
-            // 拿不到时退回发布说明里手写的哈希。注意这里用未截断的全文：
-            // 摘要可能正好落在截断边界之后。
-            ExpectedSha256 = asset.Sha256 ?? ReleaseNotesChecksum.Extract(
-                ReleasesAtomParser.FindFullNotes(documents.AtomXml, tagName)),
+            // 摘要只有一个来源：资产列表。它由 GitHub 在上传时按文件内容算出，
+            // 不需要人工维护，也不会与包不一致。
+            // 早先还支持从发布说明里手写 SHA256 作为回退，但本项目从未这样用过，
+            // 那条路径永远是 null，只会让人误以为存在第二个来源。
+            ExpectedSha256 = asset.Sha256,
+            AssetStatus = asset.Status,
         };
     }
 }

@@ -364,7 +364,7 @@ public sealed class UpdateService : IDisposable
         PrepareFailureReason.ChecksumMismatch =>
             "下载的更新包校验失败，文件可能不完整或被改动，已删除。请稍后重试。",
         PrepareFailureReason.SizeMismatch =>
-            "下载的更新包大小不正确，已删除。请稍后重试。",
+            "下载的更新包大小异常，已删除。请稍后重试。",
         PrepareFailureReason.InvalidArchive =>
             "更新包格式不正确，无法解压。请稍后重试或从发布页手动下载。",
         PrepareFailureReason.UnsafeArchive =>
